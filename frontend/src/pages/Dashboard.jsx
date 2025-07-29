@@ -212,91 +212,24 @@ const Dashboard = () => {
       });
       
       if (result.success) {
-        // Transform backend data to frontend format using Gemini parsed data
-        const transformedData = {
-          overallHealth: result.data.health?.summary?.passed > result.data.health?.summary?.failed ? 'healthy' : 'unhealthy',
-          nodeCount: result.data.nodes?.length || result.data.cluster_info?.cluster_size || 0,
-          activeConnections: result.data.nodes?.reduce((sum, node) => sum + (node.client_connections || 0), 0) || 0,
-          cacheHitRate: 0, // Not available in current data
-          latency: result.data.performance?.latency?.[0]?.ops_per_sec || 0,
-          issues: result.data.health?.summary?.failed || 0,
-          warnings: result.data.health?.summary?.skipped || 0,
-          lastUpdated: result.data.parsed_at || new Date().toISOString(),
-          rawText: result.data.raw_content || '',
-          sections: {
-            summary: result.data.summary || [],
-            health: result.data.health || [],
-            performance: result.data.performance || [],
-            configuration: result.data.configuration || [],
-            systemInfo: result.data.system_info || [],
-            xdrStatus: result.data.xdr_status || [],
-            logs: result.data.logs || []
-          },
-          clusterInfo: {
-            name: result.data.cluster_info?.cluster_name || 'Aerospike Cluster',
-            serverVersion: result.data.cluster_info?.server_version || '',
-            osVersion: result.data.cluster_info?.os_version || '',
-            clusterSize: result.data.cluster_info?.cluster_size || result.data.nodes?.length || 0,
-            devices: { 
-              total: result.data.cluster_info?.devices_total || 0, 
-              perNode: result.data.cluster_info?.devices_per_node || 0 
-            },
-            shmemIndex: { 
-              used: result.data.cluster_info?.shmem_index_used || '0 GB', 
-              unit: 'GB' 
-            },
-            memory: { 
-              total: result.data.cluster_info?.memory_total || '0 GB',
-              used: result.data.cluster_info?.memory_used || '0 GB', 
-              usedPercent: result.data.cluster_info?.memory_used_percent || '0 %',
-              available: result.data.cluster_info?.memory_avail || '0 GB', 
-              unit: 'GB' 
-            },
-            licenseUsage: { 
-              latest: result.data.cluster_info?.license_usage_latest || '0 GB', 
-              unit: 'GB' 
-            },
-            activeNamespaces: { 
-              count: result.data.cluster_info?.namespaces_active || 0, 
-              total: result.data.cluster_info?.namespaces_total || 0 
-            },
-            activeFeatures: result.data.cluster_info?.active_features?.split(',') || []
-          },
-          // Use namespaces from Gemini parsing
-          namespaces: result.data.namespaces?.map(ns => ({
-            name: ns.namespace || 'Unknown Namespace',
-            devices: { total: ns.drives_total || 0, perNode: ns.drives_per_node || 0 },
-            shmemIndex: { used: '0 GB', unit: 'GB' },
-            memory: { 
-              total: ns.memory_total || '0 GB',
-              used: '0 GB', 
-              usedPercent: ns.memory_used_percent || '0 %',
-              available: '0 GB', 
-              unit: 'GB' 
-            },
-            licenseUsage: { latest: '0 GB', unit: 'GB' },
-            replicationFactor: ns.replication_factor || 0,
-            rackAware: false,
-            masterObjects: { 
-              count: ns.master_objects?.replace(' M', '') || 0, 
-              unit: 'M' 
-            },
-            compressionRatio: ns.compression_ratio || 0,
-            // Add any additional namespace info
-            additionalInfo: ns
-          })) || []
+        // Use the Gemini parsed data directly - it already has the correct structure
+        const healthData = {
+          ...result.data, // This contains clusterInfo, nodes, namespaces, health
+          filename: result.filename,
+          lastUpdated: new Date().toISOString()
         };
         
-        setHealthData(transformedData);
+        setHealthData(healthData);
         
         // Save to localStorage
-        saveToLocalStorage(file, transformedData);
+        saveToLocalStorage(file, healthData);
         
         logger.info('=== File upload process completed successfully ===', { 
           filename: file.name,
-          dataSize: Object.keys(transformedData).length,
-          sections: Object.keys(transformedData.sections || {}),
-          clusterInfo: transformedData.clusterInfo ? Object.keys(transformedData.clusterInfo) : []
+          dataSize: Object.keys(healthData).length,
+          clusterInfo: healthData.clusterInfo ? Object.keys(healthData.clusterInfo) : [],
+          nodes: healthData.nodes?.length || 0,
+          namespaces: healthData.namespaces?.length || 0
         });
       } else {
         throw new Error(result.message || 'Failed to process file');
