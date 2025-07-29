@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  aerospike:
+    image: aerospike/aerospike-server:latest
+    container_name: aerospike-server
+    ports:
+      - "3000:3000"  # Aerospike port
+      - "3001:3001"  # Aerospike fabric port
+      - "3002:3002"  # Aerospike mesh port
+      - "3003:3003"  # Aerospike info port
+    volumes:
+      - aerospike_data:/opt/aerospike/data
+      - aerospike_logs:/opt/aerospike/logs
+    environment:
+      - AEROSPIKE_NAMESPACE=healthcheck
+      - AEROSPIKE_REPLICATION_FACTOR=1
+      - AEROSPIKE_MEMORY_GB=1
+      - AEROSPIKE_STORAGE_GB=1
+    command: --instance 0
+    healthcheck:
+      test: ["CMD", "asinfo", "-h", "localhost", "-p", "3000", "-v", "build"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  aerospike_data:
+    driver: local
+  aerospike_logs:
+    driver: local 

@@ -1,0 +1,58 @@
+# Logs
+logs/
+*.log
+backend/logs/
+backend/*.log
+
+# Environment variables
+.env
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# User uploads and generated files
+user_uploads/
+*.txt
+*.json
+!package.json
+!package-lock.json
+!vite.config.js
+!tailwind.config.js
+!postcss.config.js
+
+# Health check outputs
+aerospike_health_report_*.txt
+aerospike_critical_report_*.txt
+aerospike_detailed_report_*.txt
+aerospike_health_data_*.json 

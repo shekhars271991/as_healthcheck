@@ -2,6 +2,12 @@
 class Logger {
   constructor() {
     this.logs = [];
+    
+    // Clear logs on page load/refresh
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('aerospike_logs');
+      console.log('Cleared previous logs on startup');
+    }
   }
 
   log(level, message, data = null) {
