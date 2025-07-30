@@ -453,6 +453,9 @@ const Dashboard = () => {
                   <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
                     {healthData.health?.failed || 0} Failed
                   </span>
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    {healthData.health?.skipped || 0} Skipped
+                  </span>
                 </div>
               </div>
             </div>
@@ -570,6 +573,139 @@ const Dashboard = () => {
                           </div>
                         </div>
                       </div>
+                      
+                      {/* Usage Information */}
+                      {ns?.usageInfo && (
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          <h5 className="text-sm font-medium text-gray-700 mb-3">Usage Information</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">Evictions</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.usageInfo.evictions || 'N/A'}
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">Stop Writes</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.usageInfo.stopWrites || 'N/A'}
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">System Memory</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.usageInfo.systemMemory || 'N/A'}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Primary Index */}
+                          {ns.usageInfo.primaryIndex && (
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <h6 className="text-xs font-medium text-gray-600 mb-2">Primary Index</h6>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-gray-500">Type</div>
+                                  <div className="text-sm text-gray-900 font-mono">
+                                    {ns.usageInfo.primaryIndex.type || 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-gray-500">Used</div>
+                                  <div className="text-sm text-gray-900 font-mono">
+                                    {ns.usageInfo.primaryIndex.used || 'N/A'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Storage Engine */}
+                          {ns.usageInfo.storageEngine && (
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <h6 className="text-xs font-medium text-gray-600 mb-2">Storage Engine</h6>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-gray-500">Used</div>
+                                  <div className="text-sm text-gray-900 font-mono">
+                                    {ns.usageInfo.storageEngine.used || 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-gray-500">Available %</div>
+                                  <div className="text-sm text-gray-900 font-mono">
+                                    {ns.usageInfo.storageEngine.availablePercent || 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-gray-500">Evict %</div>
+                                  <div className="text-sm text-gray-900 font-mono">
+                                    {ns.usageInfo.storageEngine.evictPercent || 'N/A'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Object Information */}
+                      {ns?.objectInfo && (
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          <h5 className="text-sm font-medium text-gray-700 mb-3">Object Information</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">Total Records</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.objectInfo.totalRecords || 'N/A'}
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">Master Objects</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.objectInfo.masterObjects || 'N/A'}
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">Expirations</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.objectInfo.expirations || 'N/A'}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Tombstones */}
+                          {ns.objectInfo.tombstones && (
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <h6 className="text-xs font-medium text-gray-600 mb-2">Tombstones</h6>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-gray-500">Master</div>
+                                  <div className="text-sm text-gray-900 font-mono">
+                                    {ns.objectInfo.tombstones.master || 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-gray-500">Prole</div>
+                                  <div className="text-sm text-gray-900 font-mono">
+                                    {ns.objectInfo.tombstones.prole || 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="text-xs font-medium text-gray-500">Non-Replica</div>
+                                  <div className="text-sm text-gray-900 font-mono">
+                                    {ns.objectInfo.tombstones.nonReplica || 'N/A'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -578,26 +714,7 @@ const Dashboard = () => {
           </div>
         )}
         
-        {/* Health Issues Section */}
-        {healthData.health?.issues?.length > 0 && (
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <AlertTriangle className="h-5 w-5 mr-2 text-red-600" />
-              Health Issues ({healthData.health.issues.length})
-            </h3>
-            
-            <div className="space-y-3">
-              {healthData.health.issues.map((issue, index) => (
-                <div key={index} className="flex items-start space-x-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-red-800">
-                    {issue}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+
       </div>
     );
   };

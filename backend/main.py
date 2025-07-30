@@ -492,8 +492,7 @@ class HealthDataProcessor:
             logger.info("Sending data to Gemini for parsing...")
             
             # Create a concise prompt for parsing
-            prompt = f"""
-Parse this Aerospike cluster data and return ONLY valid JSON (no markdown formatting, no code blocks, just pure JSON) with these fields:
+            prompt = f"""Parse this Aerospike cluster data and return ONLY valid JSON (no markdown formatting, no code blocks, just pure JSON) with these fields:
 
 {{
   "clusterInfo": {{
@@ -521,21 +520,74 @@ Parse this Aerospike cluster data and return ONLY valid JSON (no markdown format
       "objects": "total objects",
       "memoryUsed": "memory used",
       "memoryUsedPercent": "memory usage %",
-      "replicationFactor": "replication factor"
+      "replicationFactor": "replication factor",
+      "usageInfo": {{
+        "evictions": "eviction count",
+        "stopWrites": "stop writes status",
+        "systemMemory": "system memory available %",
+        "primaryIndex": {{
+          "type": "index type",
+          "used": "index memory used"
+        }},
+        "secondaryIndex": {{
+          "type": "secondary index type",
+          "used": "secondary index memory used"
+        }},
+        "storageEngine": {{
+          "used": "storage engine memory used",
+          "availablePercent": "available percentage",
+          "evictPercent": "eviction percentage"
+        }}
+      }},
+      "objectInfo": {{
+        "totalRecords": "total records",
+        "masterObjects": "master objects count",
+        "proleObjects": "prole objects count",
+        "nonReplicaObjects": "non-replica objects count",
+        "expirations": "expiration count",
+        "tombstones": {{
+          "master": "master tombstones",
+          "prole": "prole tombstones",
+          "nonReplica": "non-replica tombstones"
+        }},
+        "pendingMigrates": {{
+          "tx": "transmit count",
+          "rx": "receive count"
+        }}
+      }}
     }}
   ],
+  "networkInfo": {{
+    "nodes": [
+      {{
+        "node": "node address",
+        "nodeId": "node ID",
+        "ip": "IP address",
+        "build": "build version",
+        "migrations": "migration count",
+        "cluster": {{
+          "size": "cluster size",
+          "key": "cluster key",
+          "integrity": "integrity status",
+          "principal": "principal node"
+        }},
+        "clientConnections": "client connections",
+        "uptime": "uptime"
+      }}
+    ]
+  }},
   "health": {{
     "overall": "overall health status",
     "passed": "number of passed checks",
     "failed": "number of failed checks",
+    "skipped": "number of skipped checks",
     "issues": ["list of issues"]
   }},
   "lastUpdated": "{datetime.now().isoformat()}"
 }}
 
 Data to parse:
-{combined_output}
-"""
+{combined_output}"""
             
             # Call Gemini API
             model = genai.GenerativeModel('gemini-2.0-flash')
@@ -614,10 +666,14 @@ Data to parse:
                 },
                 'nodes': [],
                 'namespaces': [],
+                'networkInfo': {
+                    'nodes': []
+                },
                 'health': {
                     'overall': 'Unknown',
                     'passed': 0,
                     'failed': 0,
+                    'skipped': 0,
                     'issues': []
                 },
                 'lastUpdated': datetime.now().isoformat(),
