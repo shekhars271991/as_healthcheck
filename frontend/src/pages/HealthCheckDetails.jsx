@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Database, Activity, Eye, ChevronRight, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock } from 'lucide-react';
+import { ArrowLeft, Users, Database, Activity, Eye, ChevronRight, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus } from 'lucide-react';
 
 const HealthCheckDetails = () => {
   const { healthCheckId } = useParams();
@@ -9,6 +9,7 @@ const HealthCheckDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [uploading, setUploading] = useState({}); // Track uploading state per region
 
   useEffect(() => {
     fetchHealthCheckDetails();
@@ -45,6 +46,57 @@ const HealthCheckDetails = () => {
 
   const handleRefresh = () => {
     fetchHealthCheckDetails(true);
+  };
+
+  const handleUploadMoreFiles = async (regionName, files) => {
+    if (!files || files.length === 0) return;
+
+    setUploading(prev => ({ ...prev, [regionName]: true }));
+
+    try {
+      const formData = new FormData();
+      
+      // Add all selected files
+      Array.from(files).forEach(file => {
+        formData.append('files', file);
+      });
+      
+      // Add region name
+      formData.append('region_name', regionName);
+
+      const uploadResponse = await fetch(`http://localhost:8000/health-checks/${healthCheckId}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const uploadData = await uploadResponse.json();
+      
+      if (!uploadData.success) {
+        throw new Error(`Failed to upload files for region ${regionName}: ${uploadData.message}`);
+      }
+
+      // Refresh the page to show new clusters
+      await fetchHealthCheckDetails(true);
+      
+    } catch (err) {
+      setError(err.message || 'Failed to upload files');
+      console.error('Error uploading files:', err);
+    } finally {
+      setUploading(prev => ({ ...prev, [regionName]: false }));
+    }
+  };
+
+  const triggerFileInput = (regionName) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = '.tgz,.tar.gz,.zip,*'; // Accept various file types
+    input.onchange = (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleUploadMoreFiles(regionName, e.target.files);
+      }
+    };
+    input.click();
   };
 
   const handleViewCluster = (resultKey) => {
@@ -226,12 +278,12 @@ const HealthCheckDetails = () => {
               <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
-            <div className="text-right">
+            {/* <div className="text-right">
               <div className={`text-lg font-semibold ${overallHealth.color}`}>
                 {overallHealth.status}
               </div>
               <div className="text-sm text-gray-500">Overall Status</div>
-            </div>
+            </div> */}
           </div>
         </div>
       </div>
@@ -282,14 +334,33 @@ const HealthCheckDetails = () => {
                     {regionSummary.healthIssues} issues
                   </p>
                 </div>
-                <div className="text-right">
-                  <div className={`text-sm font-medium ${
-                    regionSummary.healthIssues === 0 ? 'text-green-600' : 
-                    regionSummary.healthIssues < regionSummary.totalClusters ? 'text-yellow-600' : 'text-red-600'
-                  }`}>
-                    {regionSummary.healthIssues === 0 ? 'Healthy' : 
-                     regionSummary.healthIssues < regionSummary.totalClusters ? 'Warning' : 'Critical'}
-                  </div>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => triggerFileInput(region.region_name)}
+                    disabled={uploading[region.region_name]}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {uploading[region.region_name] ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Upload More Files
+                      </>
+                    )}
+                  </button>
+                  {/* <div className="text-right">
+                    <div className={`text-sm font-medium ${
+                      regionSummary.healthIssues === 0 ? 'text-green-600' : 
+                      regionSummary.healthIssues < regionSummary.totalClusters ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {regionSummary.healthIssues === 0 ? 'Healthy' : 
+                       regionSummary.healthIssues < regionSummary.totalClusters ? 'Warning' : 'Critical'}
+                    </div>
+                  </div> */}
                 </div>
               </div>
 
@@ -313,8 +384,6 @@ const HealthCheckDetails = () => {
                       return total + uniqueData;
                     }, 0).toFixed(2) + ' GB' || 'N/A';
                     
-                    const healthStatus = clusterData?.health?.overall || 'Unknown';
-                    
                     return (
                       <div key={clusterIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors">
                         <div className="flex justify-between items-start mb-3">
@@ -327,15 +396,6 @@ const HealthCheckDetails = () => {
                               {statusInfo.icon}
                               <span className="ml-1">{statusInfo.label}</span>
                             </span>
-                            {statusInfo.canView && healthStatus && (
-                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                healthStatus === 'CRITICAL' ? 'bg-red-100 text-red-800' :
-                                healthStatus === 'WARNING' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-green-100 text-green-800'
-                              }`}>
-                                {healthStatus}
-                              </span>
-                            )}
                           </div>
                         </div>
                         
