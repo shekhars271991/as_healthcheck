@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2 } from 'lucide-react';
+import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2, AlertCircle } from 'lucide-react';
 
 const HealthCheckDetails = () => {
   const { healthCheckId } = useParams();
@@ -20,6 +20,7 @@ const HealthCheckDetails = () => {
   const [currentPage, setCurrentPage] = useState({});
   const [deletingCluster, setDeletingCluster] = useState(null); // Track which cluster is being deleted
   const [deleteConfirmCluster, setDeleteConfirmCluster] = useState(null); // Confirmation dialog state
+  const [uploadNotifications, setUploadNotifications] = useState([]); // Track upload notifications
 
   useEffect(() => {
     fetchHealthCheckDetails();
@@ -61,13 +62,51 @@ const HealthCheckDetails = () => {
   const handleUploadMoreFiles = async (regionName, files) => {
     if (!files || files.length === 0) return;
 
+    // Check for duplicates
+    const region = regions.find(r => r.region_name === regionName);
+    const existingFilenames = region?.clusters?.map(c => c.filename) || [];
+    
+    const filesToUpload = [];
+    const duplicateFiles = [];
+    const notifications = [];
+
+    Array.from(files).forEach(file => {
+      if (existingFilenames.includes(file.name)) {
+        duplicateFiles.push(file.name);
+        notifications.push({
+          id: Date.now() + Math.random(),
+          type: 'warning',
+          message: `File "${file.name}" already exists in region "${regionName}"`,
+          timestamp: new Date()
+        });
+      } else {
+        filesToUpload.push(file);
+      }
+    });
+
+    // Show notifications for duplicates
+    if (notifications.length > 0) {
+      setUploadNotifications(prev => [...prev, ...notifications]);
+      // Auto-remove notifications after 5 seconds
+      setTimeout(() => {
+        setUploadNotifications(prev => 
+          prev.filter(n => !notifications.some(newN => newN.id === n.id))
+        );
+      }, 5000);
+    }
+
+    // If no files to upload (all duplicates), return early
+    if (filesToUpload.length === 0) {
+      return;
+    }
+
     setUploading(prev => ({ ...prev, [regionName]: true }));
 
     try {
       const formData = new FormData();
       
-      // Add all selected files
-      Array.from(files).forEach(file => {
+      // Add only non-duplicate files
+      filesToUpload.forEach(file => {
         formData.append('files', file);
       });
       
@@ -83,6 +122,22 @@ const HealthCheckDetails = () => {
       
       if (!uploadData.success) {
         throw new Error(`Failed to upload files for region ${regionName}: ${uploadData.message}`);
+      }
+
+      // Show success notification
+      if (filesToUpload.length > 0) {
+        const successNotification = {
+          id: Date.now() + Math.random(),
+          type: 'success',
+          message: `Successfully uploaded ${filesToUpload.length} file(s) to region "${regionName}"`,
+          timestamp: new Date()
+        };
+        setUploadNotifications(prev => [...prev, successNotification]);
+        
+        // Auto-remove success notification after 3 seconds
+        setTimeout(() => {
+          setUploadNotifications(prev => prev.filter(n => n.id !== successNotification.id));
+        }, 3000);
       }
 
       // Refresh the page to show new clusters
@@ -494,6 +549,43 @@ const HealthCheckDetails = () => {
         </div>
       </div>
 
+      {/* Upload Notifications */}
+      {uploadNotifications.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 space-y-2">
+          {uploadNotifications.map(notification => (
+            <div
+              key={notification.id}
+              className={`max-w-sm p-4 rounded-lg shadow-lg border ${
+                notification.type === 'success' 
+                  ? 'bg-green-50 border-green-200 text-green-800' 
+                  : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+              } animate-in slide-in-from-right duration-300`}
+            >
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  {notification.type === 'success' ? (
+                    <CheckCircle className="h-5 w-5 text-green-400" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-yellow-400" />
+                  )}
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium">{notification.message}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setUploadNotifications(prev => prev.filter(n => n.id !== notification.id));
+                  }}
+                  className="ml-auto flex-shrink-0 text-gray-400 hover:text-gray-600"
+                >
+                  <XCircle className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Regions */}
       <div className="space-y-4">
         <h2 className="text-xl font-bold text-gray-900">Regions</h2>
@@ -534,8 +626,9 @@ const HealthCheckDetails = () => {
                               status === 'waiting' ? 'bg-yellow-100 text-yellow-800' :
                               status === 'processing' ? 'bg-blue-100 text-blue-800' :
                               status === 'completed' ? 'bg-green-100 text-green-800' :
-                              'bg-red-100 text-red-800'
+                              'bg-red-100 text-red-800 border border-red-300 shadow-sm'
                             }`}>
+                              {status === 'failed' && '⚠️ '}
                               {count} {status}
                             </span>
                           );
@@ -618,6 +711,12 @@ const HealthCheckDetails = () => {
                     const memoryUsed = clusterData?.clusterInfo?.memory?.used || 'N/A';
                     const namespaceCount = clusterData?.namespaces?.length || 0;
                     
+                    // Check if this is an error cluster (either status failed or shows "Error" in data)
+                    const isErrorCluster = cluster.status === 'failed' || 
+                                          realClusterName === 'Error' || 
+                                          totalMemory === 'Error' || 
+                                          memoryUsed === 'Error';
+                    
                     // Calculate unique memory used (sum of all namespace unique data)
                     const uniqueMemoryUsed = clusterData?.namespaces?.reduce((total, ns) => {
                       const uniqueData = parseFloat(ns.clientWrites?.uniqueData?.replace(/[^\d.]/g, '') || 0);
@@ -627,30 +726,44 @@ const HealthCheckDetails = () => {
                     return (
                       <div 
                         key={clusterIndex} 
-                        className={`border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors ${statusInfo.canView ? 'cursor-pointer' : 'cursor-default'}`}
+                        className={`border-2 rounded-lg p-4 transition-colors ${
+                          isErrorCluster
+                            ? 'border-red-300 bg-red-50 hover:bg-red-100 shadow-sm' 
+                            : 'border-gray-200 bg-white hover:bg-gray-50'
+                        } ${statusInfo.canView ? 'cursor-pointer' : 'cursor-default'}`}
                         onClick={() => statusInfo.canView && handleViewCluster(cluster.result_key)}
                       >
                         <div className="flex justify-between items-start mb-3">
                           <div className="flex-1">
                             <div className="flex items-center space-x-2">
-                              <h5 className="font-medium text-gray-900">{realClusterName}</h5>
+                              <h5 className={`font-medium ${isErrorCluster ? 'text-red-700' : 'text-gray-900'}`}>
+                                {realClusterName}
+                              </h5>
                               {/* Status Dot */}
                               <div className="flex items-center">
-                                {cluster.status === 'completed' && (
-                                  <div className="w-2 h-2 bg-green-500 rounded-full" title="Completed"></div>
-                                )}
-                                {cluster.status === 'failed' && (
-                                  <div className="w-2 h-2 bg-red-500 rounded-full" title="Failed"></div>
-                                )}
-                                {cluster.status === 'processing' && (
-                                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" title="Processing"></div>
-                                )}
-                                {cluster.status === 'waiting' && (
-                                  <div className="w-2 h-2 bg-yellow-500 rounded-full" title="Waiting"></div>
+                                {isErrorCluster ? (
+                                  <div className="flex items-center">
+                                    <div className="w-2.5 h-2.5 bg-red-500 rounded-full" title="Error"></div>
+                                    <span className="ml-2 text-xs font-medium text-red-600 bg-white px-2 py-0.5 rounded border border-red-200">ERROR</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {cluster.status === 'completed' && (
+                                      <div className="w-2 h-2 bg-green-500 rounded-full" title="Completed"></div>
+                                    )}
+                                    {cluster.status === 'processing' && (
+                                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" title="Processing"></div>
+                                    )}
+                                    {cluster.status === 'waiting' && (
+                                      <div className="w-2 h-2 bg-yellow-500 rounded-full" title="Waiting"></div>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </div>
-                            <p className="text-xs text-gray-500">{cluster.filename}</p>
+                            <p className={`text-xs ${isErrorCluster ? 'text-red-600' : 'text-gray-500'}`}>
+                              {cluster.filename}
+                            </p>
                           </div>
                           <div className="flex items-center space-x-2">
                             <button
@@ -691,10 +804,19 @@ const HealthCheckDetails = () => {
                             </div>
                           </div>
                         ) : (
-                          <div className="text-xs text-gray-500 text-center py-3">
+                          <div className={`text-xs text-center py-3 ${
+                            cluster.status === 'failed' 
+                              ? 'text-red-600 bg-red-100 border border-red-200 rounded-md' 
+                              : 'text-gray-500'
+                          }`}>
                             {cluster.status === 'waiting' ? 'Waiting for file upload...' :
                              cluster.status === 'processing' ? 'Analyzing collectinfo...' :
-                             cluster.status === 'failed' ? `Failed: ${cluster.error || 'Unknown error'}` :
+                             cluster.status === 'failed' ? (
+                               <div>
+                                 <div className="font-medium">❌ Processing Failed</div>
+                                 <div className="mt-1 text-xs">{cluster.error || 'Unknown error'}</div>
+                               </div>
+                             ) :
                              'Waiting for processing'}
                           </div>
                         )}
