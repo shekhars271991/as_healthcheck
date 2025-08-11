@@ -73,7 +73,7 @@ except Exception as e:
 # List of asadm commands to run - reduced to major ones to avoid large prompts
 ASADM_COMMANDS = [
     "info",
-    "health",
+    "show stat like client_write",
     "summary"
 ]
 
@@ -492,7 +492,20 @@ class HealthDataProcessor:
             logger.info("Sending data to Gemini for parsing...")
             
             # Create a concise prompt for parsing
-            prompt = f"""Parse this Aerospike cluster data and return ONLY valid JSON (no markdown formatting, no code blocks, just pure JSON) with these fields:
+            prompt = f"""Parse this Aerospike cluster data and return ONLY valid JSON (no markdown formatting, no code blocks, just pure JSON) with these fields.
+
+IMPORTANT: For clientWrites data, look for the 'show stat like client_write' section which contains node-by-node statistics:
+1. Find the rows for 'client_write_success' and 'xdr_client_write_success'
+2. Extract the individual values for each node as arrays (do NOT sum them)
+3. Also extract the corresponding node names/addresses
+4. The backend will handle the aggregation
+
+Example:
+- If you see: client_write_success |23095|32213|215400|69448|249390
+- Extract as: clientWriteSuccessPerNode: [23095, 32213, 215400, 69448, 249390]
+- Extract nodeNames: ["node1_address", "node2_address", "node3_address", "node4_address", "node5_address"]
+
+Fields to extract:
 
 {{
   "clusterInfo": {{
@@ -504,6 +517,11 @@ class HealthDataProcessor:
       "total": "total memory",
       "used": "used memory",
       "usedPercent": "usage percentage"
+    }},
+    "license": {{
+      "usage": "license usage amount",
+      "usagePercent": "license usage percentage",
+      "total": "total license capacity"
     }}
   }},
   "nodes": [
@@ -514,6 +532,7 @@ class HealthDataProcessor:
       "connections": "client connections"
     }}
   ],
+
   "namespaces": [
     {{
       "name": "namespace name",
@@ -554,6 +573,15 @@ class HealthDataProcessor:
           "tx": "transmit count",
           "rx": "receive count"
         }}
+      }},
+      "license": {{
+        "usage": "namespace license usage",
+        "usagePercent": "namespace license usage percentage"
+      }},
+      "clientWrites": {{
+        "clientWriteSuccessPerNode": "array of client_write_success values for each node from 'show stat like client_write' output",
+        "xdrClientWriteSuccessPerNode": "array of xdr_client_write_success values for each node from 'show stat like client_write' output",
+        "nodeNames": "array of node names/addresses corresponding to the values"
       }}
     }}
   ],
@@ -620,6 +648,9 @@ Data to parse:
                 parsed_data['parsed_at'] = datetime.now().isoformat()
                 parsed_data['ai_parsed'] = True
                 
+                # Calculate derived metrics for each namespace
+                self.calculate_derived_metrics(parsed_data)
+                
                 # Log the complete flow for debugging
                 logger.info("=== GEMINI PROMPT ===")
                 logger.info(prompt)
@@ -645,6 +676,73 @@ Data to parse:
             logger.error(f"Error calling Gemini API: {e}")
             return self.create_fallback_structure(combined_output, f"Gemini API error: {e}")
 
+    def calculate_derived_metrics(self, parsed_data: Dict[str, Any]) -> None:
+        """Calculate derived metrics for namespaces"""
+        try:
+            if 'namespaces' not in parsed_data or not parsed_data['namespaces']:
+                return
+            
+            for namespace in parsed_data['namespaces']:
+                if 'clientWrites' in namespace and 'license' in namespace:
+                    client_writes = namespace['clientWrites']
+                    license_info = namespace['license']
+                    
+                    # Extract and aggregate node values
+                    try:
+                        # Get per-node arrays
+                        client_write_per_node = client_writes.get('clientWriteSuccessPerNode', [])
+                        xdr_client_write_per_node = client_writes.get('xdrClientWriteSuccessPerNode', [])
+                        
+                        # Convert to numbers and sum across all nodes
+                        client_write_success = 0
+                        if client_write_per_node:
+                            for value in client_write_per_node:
+                                numeric_value = float(''.join(c for c in str(value).replace(',', '') if c.isdigit() or c == '.'))
+                                client_write_success += numeric_value
+                        
+                        xdr_client_write_success = 0
+                        if xdr_client_write_per_node:
+                            for value in xdr_client_write_per_node:
+                                numeric_value = float(''.join(c for c in str(value).replace(',', '') if c.isdigit() or c == '.'))
+                                xdr_client_write_success += numeric_value
+                        
+                        # Extract license usage (remove units like GB, MB, etc.)
+                        license_usage_str = str(license_info.get('usage', '0'))
+                        license_usage = float(''.join(c for c in license_usage_str.replace(',', '') if c.isdigit() or c == '.'))
+                        
+                        # Calculate unique writes percentage
+                        # Formula: (Client Write Success - XDR Client Write Success) * 100 / Client Write Success
+                        if client_write_success > 0:
+                            unique_writes_percent = ((client_write_success - xdr_client_write_success) * 100) / client_write_success
+                            unique_writes_percent = max(0, min(100, unique_writes_percent))  # Clamp between 0-100
+                        else:
+                            unique_writes_percent = 0
+                        
+                        # Calculate unique data
+                        # Formula: license usage * % of unique writes
+                        unique_data = license_usage * (unique_writes_percent / 100)
+                        
+                        # Add aggregated and calculated values to the namespace
+                        client_writes['clientWriteSuccess'] = int(client_write_success)
+                        client_writes['xdrClientWriteSuccess'] = int(xdr_client_write_success)
+                        client_writes['uniqueWritesPercent'] = f"{unique_writes_percent:.2f}%"
+                        client_writes['uniqueData'] = f"{unique_data:.2f}"
+                        
+                        logger.info(f"Calculated metrics for namespace {namespace.get('name', 'Unknown')}: "
+                                   f"clientWriteSuccess={int(client_write_success)} (aggregated from {len(client_write_per_node)} nodes), "
+                                   f"xdrClientWriteSuccess={int(xdr_client_write_success)} (aggregated from {len(xdr_client_write_per_node)} nodes), "
+                                   f"uniqueWritesPercent={unique_writes_percent:.2f}%, "
+                                   f"uniqueData={unique_data:.2f}")
+                        
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Failed to calculate derived metrics for namespace {namespace.get('name', 'Unknown')}: {e}")
+                        # Set default values if calculation fails
+                        client_writes['uniqueWritesPercent'] = 'N/A'
+                        client_writes['uniqueData'] = 'N/A'
+                        
+        except Exception as e:
+            logger.error(f"Error calculating derived metrics: {e}")
+
     def create_fallback_structure(self, combined_output: str, error_msg: str = "") -> Dict[str, Any]:
         """Create a basic fallback structure when Gemini fails"""
         try:
@@ -662,6 +760,11 @@ Data to parse:
                         'total': 'Unknown',
                         'used': 'Unknown',
                         'usedPercent': 'Unknown'
+                    },
+                    'license': {
+                        'usage': 'Unknown',
+                        'usagePercent': 'Unknown',
+                        'total': 'Unknown'
                     }
                 },
                 'nodes': [],

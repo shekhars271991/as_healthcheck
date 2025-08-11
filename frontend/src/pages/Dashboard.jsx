@@ -419,6 +419,11 @@ const Dashboard = () => {
               <div className="text-sm font-medium text-gray-500">Memory Used</div>
               <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.memory?.used || 'N/A'} ({healthData.clusterInfo?.memory?.usedPercent || 'N/A'})</div>
             </div>
+            
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-gray-500">License Usage</div>
+              <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.license?.usage || 'N/A'} ({healthData.clusterInfo?.license?.usagePercent || 'N/A'})</div>
+            </div>
           </div>
           
           {/* Namespace Summary Information */}
@@ -436,29 +441,7 @@ const Dashboard = () => {
               </div>
             </div>
             
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-gray-500">Health Summary</div>
-              <div className="text-sm text-gray-900">
-                <div className="flex flex-wrap gap-1">
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                    healthData.health?.overall === 'Warning' || healthData.health?.overall === 'Critical' 
-                      ? 'bg-red-100 text-red-800' 
-                      : 'bg-green-100 text-green-800'
-                  }`}>
-                    {healthData.health?.overall || 'Unknown'}
-                  </span>
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {healthData.health?.passed || 0} Passed
-                  </span>
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                    {healthData.health?.failed || 0} Failed
-                  </span>
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                    {healthData.health?.skipped || 0} Skipped
-                  </span>
-                </div>
-              </div>
-            </div>
+
             
             <div className="space-y-2">
               <div className="text-sm font-medium text-gray-500">Last Updated</div>
@@ -470,6 +453,7 @@ const Dashboard = () => {
           
         </div>
         
+
         {/* Nodes Section */}
         {healthData.nodes?.length > 0 && (
           <div className="card">
@@ -570,6 +554,20 @@ const Dashboard = () => {
                           <div className="text-xs font-medium text-gray-500">Memory Used %</div>
                           <div className="text-sm text-gray-900 font-mono">
                             {ns?.memoryUsedPercent || 'N/A'}
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium text-gray-500">License Usage</div>
+                          <div className="text-sm text-gray-900 font-mono">
+                            {ns?.license?.usage || 'N/A'} ({ns?.license?.usagePercent || 'N/A'})
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium text-gray-500">Unique Data</div>
+                          <div className="text-sm text-gray-900 font-mono">
+                            {ns?.clientWrites?.uniqueData || 'N/A'}
                           </div>
                         </div>
                       </div>
@@ -704,6 +702,42 @@ const Dashboard = () => {
                               </div>
                             </div>
                           )}
+                        </div>
+                      )}
+                      
+                      {/* Client Writes */}
+                      {ns?.clientWrites && (
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          <h5 className="text-sm font-medium text-gray-700 mb-3">Client Write Success</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">Client Write Success</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.clientWrites.clientWriteSuccess || 'N/A'}
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">XDR Client Write Success</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.clientWrites.xdrClientWriteSuccess || 'N/A'}
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">Unique Writes %</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.clientWrites.uniqueWritesPercent || 'N/A'}
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-gray-500">Unique Data</div>
+                              <div className="text-sm text-gray-900 font-mono">
+                                {ns.clientWrites.uniqueData || 'N/A'}
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>

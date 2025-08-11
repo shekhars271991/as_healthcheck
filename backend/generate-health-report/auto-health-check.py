@@ -83,7 +83,7 @@ critical_commands = [
     "summary",
     
     # Critical Performance Metrics
-    "show stat like client_proxy busy sprig cache_read_pct compression client_read_timeout client_write_timeout evicted_objects stop_write -flip",
+    "show stat like client_write client_proxy busy sprig cache_read_pct compression client_read_timeout client_write_timeout evicted_objects stop_write -flip",
     "show stat like dead unav re_repl busy big lost -flip",
     "show stat like heap_efficiency_pct -flip",
     
