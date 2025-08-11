@@ -108,7 +108,9 @@ const ClusterDetail = () => {
         
         <div className="flex justify-between items-start">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{clusterData.cluster_name}</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {clusterData.data?.clusterInfo?.name || clusterData.cluster_name}
+            </h1>
             <p className="text-gray-600">
               {clusterData.region_name} • {clusterData.filename} • 
               Processed {formatDate(clusterData.processed_at)}

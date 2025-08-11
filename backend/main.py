@@ -1830,5 +1830,46 @@ async def delete_health_check(health_check_id: str):
             "message": f"Error deleting health check: {str(e)}"
         }, status_code=500)
 
+@app.delete("/health-checks/clusters/{result_key}")
+async def delete_cluster(result_key: str):
+    """Delete a specific cluster result"""
+    try:
+        if not aerospike_client:
+            return JSONResponse({
+                "success": False,
+                "message": "Aerospike not connected"
+            }, status_code=500)
+        
+        # Check if the cluster result exists
+        cluster_key = ("healthcheck", "cluster_results", result_key)
+        try:
+            _, _, cluster_data = aerospike_client.get(cluster_key)
+            if not cluster_data:
+                return JSONResponse({
+                    "success": False,
+                    "message": "Cluster not found"
+                }, status_code=404)
+        except Exception:
+            return JSONResponse({
+                "success": False,
+                "message": "Cluster not found"
+            }, status_code=404)
+        
+        # Delete the cluster result record
+        aerospike_client.remove(cluster_key)
+        
+        logger.info(f"Deleted cluster result: {result_key}")
+        return JSONResponse({
+            "success": True,
+            "message": "Cluster deleted successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error deleting cluster {result_key}: {e}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Failed to delete cluster: {str(e)}"
+        }, status_code=500)
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 
