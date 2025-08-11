@@ -300,16 +300,26 @@ const HealthCheckDetails = () => {
                   {region.clusters.map((cluster, clusterIndex) => {
                     const clusterData = cluster.data;
                     const statusInfo = getClusterStatusInfo(cluster);
-                    const healthStatus = clusterData?.health?.overall || 'Unknown';
+                    
+                    // Extract cluster information for display
+                    const realClusterName = clusterData?.clusterInfo?.name || cluster.cluster_name;
+                    const totalMemory = clusterData?.clusterInfo?.memory?.total || 'N/A';
                     const memoryUsed = clusterData?.clusterInfo?.memory?.used || 'N/A';
-                    const licenseUsed = clusterData?.clusterInfo?.license?.usage || 'N/A';
-                    const nodesCount = clusterData?.nodes?.length || 0;
+                    const namespaceCount = clusterData?.namespaces?.length || 0;
+                    
+                    // Calculate unique memory used (sum of all namespace unique data)
+                    const uniqueMemoryUsed = clusterData?.namespaces?.reduce((total, ns) => {
+                      const uniqueData = parseFloat(ns.clientWrites?.uniqueData?.replace(/[^\d.]/g, '') || 0);
+                      return total + uniqueData;
+                    }, 0).toFixed(2) + ' GB' || 'N/A';
+                    
+                    const healthStatus = clusterData?.health?.overall || 'Unknown';
                     
                     return (
                       <div key={clusterIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors">
                         <div className="flex justify-between items-start mb-3">
                           <div>
-                            <h5 className="font-medium text-gray-900">{cluster.cluster_name}</h5>
+                            <h5 className="font-medium text-gray-900">{realClusterName}</h5>
                             <p className="text-xs text-gray-500">{cluster.filename}</p>
                           </div>
                           <div className="flex flex-col items-end space-y-1">
@@ -332,16 +342,20 @@ const HealthCheckDetails = () => {
                         {statusInfo.canView ? (
                           <div className="space-y-1 text-xs text-gray-600 mb-3">
                             <div className="flex justify-between">
-                              <span>Nodes:</span>
-                              <span>{nodesCount}</span>
+                              <span>Total Memory:</span>
+                              <span>{totalMemory}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span>Memory:</span>
+                              <span>Memory Used:</span>
                               <span>{memoryUsed}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span>License:</span>
-                              <span>{licenseUsed}</span>
+                              <span>Namespaces:</span>
+                              <span>{namespaceCount}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Unique Memory:</span>
+                              <span>{uniqueMemoryUsed}</span>
                             </div>
                           </div>
                         ) : (
