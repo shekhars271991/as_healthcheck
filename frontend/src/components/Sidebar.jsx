@@ -8,11 +8,15 @@ import {
   Server, 
   GitBranch, 
   FileText,
-  Database
+  Database,
+  History,
+  Plus
 } from 'lucide-react';
 
 const Sidebar = () => {
   const navigation = [
+    { name: 'Health Checks', href: '/health-checks', icon: History },
+    { name: 'Create Health Check', href: '/health-check/create', icon: Plus },
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Cluster Health', href: '/cluster-health', icon: Activity },
     { name: 'Performance', href: '/performance', icon: Gauge },

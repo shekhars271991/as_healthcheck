@@ -8,6 +8,10 @@ import Configuration from './pages/Configuration.jsx';
 import SystemInfo from './pages/SystemInfo.jsx';
 import XDRStatus from './pages/XDRStatus.jsx';
 import Logs from './pages/Logs.jsx';
+import HealthCheckHistory from './pages/HealthCheckHistory.jsx';
+import CreateHealthCheck from './pages/CreateHealthCheck.jsx';
+import HealthCheckDetails from './pages/HealthCheckDetails.jsx';
+import ClusterDetail from './pages/ClusterDetail.jsx';
 
 function App() {
   return (
@@ -16,6 +20,10 @@ function App() {
         <Sidebar />
         <main className="flex-1 overflow-auto">
           <Routes>
+            <Route path="/health-checks" element={<HealthCheckHistory />} />
+            <Route path="/health-check/create" element={<CreateHealthCheck />} />
+            <Route path="/health-check/:healthCheckId" element={<HealthCheckDetails />} />
+            <Route path="/health-check/:healthCheckId/cluster/:resultKey" element={<ClusterDetail />} />
             <Route path="/" element={<Dashboard />} />
             <Route path="/cluster-health" element={<ClusterHealth />} />
             <Route path="/performance" element={<Performance />} />

@@ -257,8 +257,19 @@ const Dashboard = () => {
   const EmptyState = () => (
     <div className="text-center py-12">
       <Upload className="mx-auto h-12 w-12 text-gray-400" />
-      <h3 className="mt-2 text-sm font-medium text-gray-900">No file uploaded</h3>
-      <p className="mt-1 text-sm text-gray-500">Upload a collectinfo file to get started</p>
+      <h3 className="mt-2 text-sm font-medium text-gray-900">No single cluster data loaded</h3>
+      <p className="mt-1 text-sm text-gray-500">
+        This view shows single cluster analysis. For multi-region health checks, 
+        use the "Health Checks" section in the sidebar.
+      </p>
+      <div className="mt-6 space-y-2">
+        <p className="text-sm text-gray-600">
+          <strong>Single Cluster:</strong> Upload a collectinfo file below
+        </p>
+        <p className="text-sm text-gray-600">
+          <strong>Multi-Region:</strong> Go to Health Checks → Create Health Check
+        </p>
+      </div>
     </div>
   );
 

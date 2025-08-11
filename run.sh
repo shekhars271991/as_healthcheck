@@ -9,6 +9,24 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}[INFO] Starting Aerospike Health Check Application${NC}"
 
+# Check if Docker is running
+if ! docker info > /dev/null 2>&1; then
+    echo -e "${RED}[ERROR] Docker is not running. Please start Docker first.${NC}"
+    exit 1
+fi
+
+# Start Aerospike database
+echo -e "${BLUE}[INFO] Starting Aerospike database...${NC}"
+if ! docker-compose ps | grep -q "aerospike-server.*Up"; then
+    docker-compose up -d aerospike
+    echo -e "${GREEN}[INFO] Aerospike started successfully${NC}"
+    # Wait for Aerospike to be ready
+    echo -e "${YELLOW}[INFO] Waiting for Aerospike to be ready...${NC}"
+    sleep 10
+else
+    echo -e "${GREEN}[INFO] Aerospike is already running${NC}"
+fi
+
 # Check if required directories exist
 if [ ! -d "frontend" ]; then
     echo -e "${RED}[ERROR] Frontend directory not found${NC}"
@@ -86,6 +104,8 @@ cleanup() {
     echo -e "\n${YELLOW}[INFO] Stopping services...${NC}"
     kill $BACKEND_PID 2>/dev/null
     kill $FRONTEND_PID 2>/dev/null
+    echo -e "${YELLOW}[INFO] Stopping Aerospike database...${NC}"
+    docker-compose stop aerospike 2>/dev/null
     echo -e "${GREEN}[INFO] All services stopped${NC}"
     exit 0
 }

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   aerospike:
     image: aerospike/aerospike-server:latest
@@ -11,13 +9,9 @@ services:
       - "3003:3003"  # Aerospike info port
     volumes:
       - aerospike_data:/opt/aerospike/data
-      - aerospike_logs:/opt/aerospike/logs
-    environment:
-      - AEROSPIKE_NAMESPACE=healthcheck
-      - AEROSPIKE_REPLICATION_FACTOR=1
-      - AEROSPIKE_MEMORY_GB=1
-      - AEROSPIKE_STORAGE_GB=1
-    command: --instance 0
+      - aerospike_logs:/var/log/aerospike
+      - ./aerospike.conf:/opt/aerospike/etc/aerospike-custom.conf
+    entrypoint: ["asd", "--foreground", "--config-file", "/opt/aerospike/etc/aerospike-custom.conf"]
     healthcheck:
       test: ["CMD", "asinfo", "-h", "localhost", "-p", "3000", "-v", "build"]
       interval: 30s

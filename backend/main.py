@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -12,12 +12,31 @@ from datetime import datetime
 from pathlib import Path
 import tempfile
 import shutil
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+from pydantic import BaseModel
 import google.generativeai as genai
 from dotenv import load_dotenv
+import aerospike
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Data models
+class RegionRequest(BaseModel):
+    region_name: str
+    file_count: int
+
+class HealthCheckRequest(BaseModel):
+    customer_name: str
+    regions: List[RegionRequest]
+
+class HealthCheckSummary(BaseModel):
+    id: str
+    customer_name: str
+    created_at: str
+    regions_count: int
+    clusters_count: int
+    status: str
 
 # Configure logging to write to file
 log_dir = Path("logs")
@@ -59,6 +78,22 @@ if GEMINI_API_KEY and GEMINI_API_KEY != 'your_gemini_api_key_here':
 else:
     logger.warning("Gemini API key not found in environment variables. Please set GEMINI_API_KEY in .env file")
 
+# Aerospike configuration
+AEROSPIKE_CONFIG = {
+    'hosts': [('127.0.0.1', 3000)],
+    'policies': {
+        'timeout': 1000  # 1 second
+    }
+}
+
+# Initialize Aerospike client
+try:
+    aerospike_client = aerospike.client(AEROSPIKE_CONFIG).connect()
+    logger.info("Connected to Aerospike successfully")
+except Exception as e:
+    logger.error(f"Failed to connect to Aerospike: {e}")
+    aerospike_client = None
+
 # Check if asadm is available
 try:
     result = subprocess.run(['asadm', '--version'], capture_output=True, text=True, timeout=5)
@@ -82,8 +117,46 @@ class HealthDataProcessor:
         self.temp_dir = Path(tempfile.mkdtemp())
         logger.info(f"Created temp directory: {self.temp_dir}")
     
+    async def save_uploaded_file(self, uploaded_file) -> Path:
+        """Save uploaded file to temp directory"""
+        file_path = self.temp_dir / uploaded_file.filename
+        
+        logger.info(f"Saving uploaded file: {uploaded_file.filename} to {file_path}")
+        
+        with open(file_path, "wb") as buffer:
+            content = await uploaded_file.read()
+            buffer.write(content)
+        
+        # Verify the file was saved and has content
+        if not file_path.exists():
+            raise Exception(f"File was not saved properly: {file_path}")
+        
+        file_size = file_path.stat().st_size
+        logger.info(f"Successfully saved file: {file_path} (size: {file_size} bytes)")
+        
+        if file_size == 0:
+            raise Exception(f"Saved file is empty: {file_path}")
+        
+        return file_path
+    
+    def cleanup(self):
+        """Clean up temporary files and directories"""
+        try:
+            if self.temp_dir.exists():
+                shutil.rmtree(self.temp_dir)
+                logger.info(f"Cleaned up temp directory: {self.temp_dir}")
+        except Exception as e:
+            logger.warning(f"Error cleaning up temp directory: {e}")
+    
     def extract_collectinfo(self, file_path: Path) -> Path:
         """Extract collectinfo tar/zip file"""
+        # Verify file exists before extraction
+        if not file_path.exists():
+            raise FileNotFoundError(f"File does not exist: {file_path}")
+        
+        file_size = file_path.stat().st_size
+        logger.info(f"File exists and has size: {file_size} bytes")
+        
         extract_path = self.temp_dir / "extracted"
         extract_path.mkdir(exist_ok=True)
         
@@ -144,6 +217,78 @@ class HealthDataProcessor:
         logger.info(f"Extracted files to: {extract_path}")
         return extract_path
     
+    def extract_cluster_name_from_collectinfo(self, extracted_path: Path) -> str:
+        """Extract cluster name from collectinfo files"""
+        try:
+            # First try to run a quick asadm command to get cluster name
+            logger.info(f"Extracting cluster name from: {extracted_path}")
+            
+            # Run 'asadm -h info' command to get basic cluster info
+            result = subprocess.run([
+                'asadm', '-h', str(extracted_path), 
+                '--execute', 'info'
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                output = result.stdout
+                logger.info("Successfully ran asadm info command")
+                
+                # Look for cluster name in the output
+                for line in output.split('\n'):
+                    if 'Cluster Name' in line and '|' in line:
+                        cluster_name = line.split('|')[1].strip()
+                        if cluster_name and cluster_name != 'null' and cluster_name != '':
+                            logger.info(f"Found cluster name: {cluster_name}")
+                            return cluster_name
+                
+                # If not found in table format, try other patterns
+                for line in output.split('\n'):
+                    if 'cluster-name' in line.lower():
+                        # Extract cluster name from config-like output
+                        if ':' in line:
+                            cluster_name = line.split(':')[1].strip()
+                            if cluster_name and cluster_name != 'null':
+                                logger.info(f"Found cluster name from config: {cluster_name}")
+                                return cluster_name
+            
+            # If asadm fails, try to find it in config files
+            logger.info("asadm command failed or cluster name not found, trying config files")
+            
+            # Look for aerospike.conf files
+            for conf_file in extracted_path.rglob("*.conf"):
+                if "aerospike" in conf_file.name.lower():
+                    try:
+                        with open(conf_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        for line in content.split('\n'):
+                            if 'cluster-name' in line and not line.strip().startswith('#'):
+                                # Extract cluster name from config
+                                if ':' in line:
+                                    cluster_name = line.split(':')[1].strip()
+                                elif '=' in line:
+                                    cluster_name = line.split('=')[1].strip()
+                                else:
+                                    # Space separated
+                                    parts = line.split()
+                                    if len(parts) >= 2:
+                                        cluster_name = parts[1]
+                                
+                                if cluster_name and cluster_name != 'null':
+                                    logger.info(f"Found cluster name in config: {cluster_name}")
+                                    return cluster_name
+                    except Exception as e:
+                        logger.warning(f"Error reading config file {conf_file}: {e}")
+            
+            # Default fallback - use filename or timestamp
+            logger.warning("Could not extract cluster name, using fallback")
+            return f"cluster_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+        except Exception as e:
+            logger.error(f"Error extracting cluster name: {e}")
+            # Fallback to timestamp-based name
+            return f"cluster_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
     def parse_health_report(self, report_path: Path) -> Dict[str, Any]:
         """Parse health report and extract structured data"""
         try:
@@ -1129,7 +1274,11 @@ async def upload_collectinfo(file: UploadFile = File(...)):
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "gemini_configured": GEMINI_API_KEY != 'your_gemini_api_key_here'}
+    return {
+        "status": "healthy", 
+        "gemini_configured": GEMINI_API_KEY != 'your_gemini_api_key_here',
+        "aerospike_connected": aerospike_client is not None
+    }
 
 @app.get("/debug/files")
 async def debug_files():
@@ -1181,6 +1330,346 @@ async def clear_logs():
     except Exception as e:
         logger.error(f"Error clearing logs: {e}")
         return JSONResponse({"success": False, "message": f"Error clearing logs: {str(e)}"})
+
+# Multi-tier health check routes
+
+@app.get("/health-checks")
+async def get_health_check_history():
+    """Get list of all health checks performed"""
+    try:
+        if not aerospike_client:
+            raise HTTPException(status_code=500, detail="Aerospike not connected")
+        
+        # Scan the health_checks set to get all records
+        health_checks = []
+        scan = aerospike_client.scan("healthcheck", "health_checks")
+        
+        def process_record(record):
+            key, metadata, bins = record
+            health_check = {
+                "id": bins.get("health_check_id", key[2]),  # Use stored ID, fallback to key
+                "customer_name": bins.get("customer_name", ""),
+                "created_at": bins.get("created_at", ""),
+                "regions_count": bins.get("regions_count", 0),
+                "clusters_count": bins.get("clusters_count", 0),
+                "status": bins.get("status", "completed")
+            }
+            health_checks.append(health_check)
+        
+        scan.foreach(process_record)
+        
+        # Sort by created_at descending (newest first)
+        health_checks.sort(key=lambda x: x["created_at"], reverse=True)
+        
+        return JSONResponse({
+            "success": True,
+            "health_checks": health_checks
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting health check history: {e}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Error getting health check history: {str(e)}"
+        }, status_code=500)
+
+@app.post("/health-checks/create")
+async def create_multi_tier_health_check(
+    customer_name: str = Form(...),
+    regions_data: str = Form(...)
+):
+    """Create a new multi-tier health check"""
+    try:
+        if not aerospike_client:
+            raise HTTPException(status_code=500, detail="Aerospike not connected")
+        
+        if not customer_name or not regions_data:
+            raise HTTPException(status_code=400, detail="Customer name and regions data are required")
+        
+        # Parse regions data
+        regions = json.loads(regions_data)
+        
+        # Generate unique ID for this health check
+        health_check_id = f"hc_{int(datetime.now().timestamp())}_{customer_name.replace(' ', '_').lower()}"
+        
+        # Count total clusters (files)
+        total_clusters = sum(region.get("file_count", 0) for region in regions)
+        
+        # Store health check metadata
+        health_check_metadata = {
+            "health_check_id": health_check_id,  # Store ID in the record
+            "customer_name": customer_name,
+            "created_at": datetime.now().isoformat(),
+            "regions_count": len(regions),
+            "clusters_count": total_clusters,
+            "status": "processing"
+        }
+        
+        # Store in Aerospike
+        key = ("healthcheck", "health_checks", health_check_id)
+        aerospike_client.put(key, health_check_metadata)
+        
+        logger.info(f"Created health check: {health_check_id} for customer: {customer_name}")
+        
+        return JSONResponse({
+            "success": True,
+            "health_check_id": health_check_id,
+            "message": "Health check created successfully"
+        })
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error creating health check: {str(e)}")
+        logger.error(f"Full traceback: {error_details}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Error creating health check: {str(e)}"
+        }, status_code=500)
+
+@app.post("/health-checks/{health_check_id}/upload")
+async def upload_collectinfo_files(
+    health_check_id: str,
+    files: List[UploadFile] = File(...),
+    region_name: str = Form(...)
+):
+    """Upload collectinfo files for a specific health check"""
+    try:
+        if not aerospike_client:
+            raise HTTPException(status_code=500, detail="Aerospike not connected")
+        
+        if not files or not region_name:
+            raise HTTPException(status_code=400, detail="Files and region name are required")
+        
+        processor = HealthDataProcessor()
+        results = []
+        
+        for i, file in enumerate(files):
+            logger.info(f"Processing file {i+1}/{len(files)}: {file.filename}")
+            
+            # Save uploaded file
+            temp_file_path = await processor.save_uploaded_file(file)
+            
+            # Extract if it's an archive
+            extracted_path = processor.extract_collectinfo(temp_file_path)
+            
+            # Extract cluster name from the collectinfo
+            cluster_name = processor.extract_cluster_name_from_collectinfo(extracted_path)
+            logger.info(f"Extracted cluster name: {cluster_name} for file: {file.filename}")
+            
+            # Run asadm commands
+            combined_output = processor.run_asadm_commands(extracted_path)
+            
+            # Parse with Gemini
+            parsed_data = processor.parse_with_gemini(combined_output)
+            
+            # Store result in Aerospike with composite key
+            result_key = f"{health_check_id}_{region_name}_{cluster_name}".replace(" ", "_").lower()
+            cluster_key = ("healthcheck", "cluster_results", result_key)
+            
+            cluster_result = {
+                "result_key": result_key,  # Store result key in the record
+                "health_check_id": health_check_id,
+                "region_name": region_name,
+                "cluster_name": cluster_name,
+                "filename": file.filename,
+                "processed_at": datetime.now().isoformat(),
+                "data": parsed_data
+            }
+            
+            aerospike_client.put(cluster_key, cluster_result)
+            
+            results.append({
+                "cluster_name": cluster_name,
+                "filename": file.filename,
+                "status": "processed",
+                "result_key": result_key
+            })
+            
+            # Cleanup temp files
+            processor.cleanup()
+        
+        # Update health check status to completed
+        health_check_key = ("healthcheck", "health_checks", health_check_id)
+        try:
+            # Get current record, update specific fields, and put it back
+            _, _, current_data = aerospike_client.get(health_check_key)
+            if current_data:
+                current_data.update({
+                    "status": "completed",
+                    "last_updated": datetime.now().isoformat()
+                })
+                aerospike_client.put(health_check_key, current_data)
+                logger.info(f"Updated health check status to completed: {health_check_id}")
+            else:
+                logger.warning(f"Health check record not found for update: {health_check_id}")
+        except Exception as e:
+            logger.error(f"Failed to update health check status: {e}")
+            # Continue anyway since the main processing was successful
+        
+        logger.info(f"Completed processing {len(files)} files for health check: {health_check_id}")
+        
+        return JSONResponse({
+            "success": True,
+            "health_check_id": health_check_id,
+            "region_name": region_name,
+            "results": results,
+            "message": f"Successfully processed {len(files)} collectinfo files"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading collectinfo files: {e}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Error uploading files: {str(e)}"
+        }, status_code=500)
+
+@app.get("/health-checks/{health_check_id}")
+async def get_health_check_details(health_check_id: str):
+    """Get detailed information about a specific health check"""
+    try:
+        if not aerospike_client:
+            raise HTTPException(status_code=500, detail="Aerospike not connected")
+        
+        # Get health check metadata
+        health_check_key = ("healthcheck", "health_checks", health_check_id)
+        _, _, health_check_data = aerospike_client.get(health_check_key)
+        
+        if not health_check_data:
+            raise HTTPException(status_code=404, detail="Health check not found")
+        
+        # Get all cluster results for this health check
+        cluster_results = []
+        scan = aerospike_client.scan("healthcheck", "cluster_results")
+        
+        def process_cluster_record(record):
+            key, metadata, bins = record
+            if bins.get("health_check_id") == health_check_id:
+                cluster_results.append({
+                    "result_key": bins.get("result_key", key[2]),  # Use stored result_key, fallback to key
+                    "region_name": bins.get("region_name", ""),
+                    "cluster_name": bins.get("cluster_name", ""),
+                    "filename": bins.get("filename", ""),
+                    "processed_at": bins.get("processed_at", ""),
+                    "data": bins.get("data", {})
+                })
+        
+        scan.foreach(process_cluster_record)
+        
+        # Group results by region
+        regions = {}
+        for result in cluster_results:
+            region_name = result["region_name"]
+            if region_name not in regions:
+                regions[region_name] = {
+                    "region_name": region_name,
+                    "clusters": []
+                }
+            regions[region_name]["clusters"].append(result)
+        
+        response_data = {
+            "health_check": health_check_data,
+            "regions": list(regions.values()),
+            "summary": {
+                "total_regions": len(regions),
+                "total_clusters": len(cluster_results)
+            }
+        }
+        
+        return JSONResponse({
+            "success": True,
+            **response_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting health check details: {e}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Error getting health check details: {str(e)}"
+        }, status_code=500)
+
+@app.get("/health-checks/{health_check_id}/cluster/{result_key}")
+async def get_cluster_details(health_check_id: str, result_key: str):
+    """Get detailed information about a specific cluster"""
+    try:
+        if not aerospike_client:
+            raise HTTPException(status_code=500, detail="Aerospike not connected")
+        
+        # Get cluster result
+        cluster_key = ("healthcheck", "cluster_results", result_key)
+        _, _, cluster_data = aerospike_client.get(cluster_key)
+        
+        if not cluster_data or cluster_data.get("health_check_id") != health_check_id:
+            raise HTTPException(status_code=404, detail="Cluster data not found")
+        
+        return JSONResponse({
+            "success": True,
+            "cluster_data": cluster_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting cluster details: {e}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Error getting cluster details: {str(e)}"
+        }, status_code=500)
+
+@app.delete("/health-checks/{health_check_id}")
+async def delete_health_check(health_check_id: str):
+    """Delete a health check and all associated cluster results"""
+    try:
+        if not aerospike_client:
+            raise HTTPException(status_code=500, detail="Aerospike not connected")
+        
+        # First, check if the health check exists
+        health_check_key = ("healthcheck", "health_checks", health_check_id)
+        try:
+            _, _, health_check_data = aerospike_client.get(health_check_key)
+            if not health_check_data:
+                raise HTTPException(status_code=404, detail="Health check not found")
+        except Exception:
+            raise HTTPException(status_code=404, detail="Health check not found")
+        
+        # Get all cluster results for this health check and delete them
+        cluster_results_deleted = 0
+        scan = aerospike_client.scan("healthcheck", "cluster_results")
+        
+        cluster_keys_to_delete = []
+        def collect_cluster_keys(record):
+            key, metadata, bins = record
+            if bins.get("health_check_id") == health_check_id:
+                cluster_keys_to_delete.append(key)
+        
+        scan.foreach(collect_cluster_keys)
+        
+        # Delete all associated cluster results
+        for cluster_key in cluster_keys_to_delete:
+            try:
+                aerospike_client.remove(cluster_key)
+                cluster_results_deleted += 1
+                logger.info(f"Deleted cluster result: {cluster_key[2]}")
+            except Exception as e:
+                logger.warning(f"Failed to delete cluster result {cluster_key[2]}: {e}")
+        
+        # Delete the main health check record
+        aerospike_client.remove(health_check_key)
+        
+        logger.info(f"Successfully deleted health check: {health_check_id} and {cluster_results_deleted} cluster results")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"Health check deleted successfully. Removed {cluster_results_deleted} associated cluster results.",
+            "deleted_cluster_results": cluster_results_deleted
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting health check {health_check_id}: {e}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Error deleting health check: {str(e)}"
+        }, status_code=500)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 
