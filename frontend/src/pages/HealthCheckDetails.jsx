@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Database, Activity, Eye, ChevronRight, Calendar, Server } from 'lucide-react';
+import { ArrowLeft, Users, Database, Activity, Eye, ChevronRight, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock } from 'lucide-react';
 
 const HealthCheckDetails = () => {
   const { healthCheckId } = useParams();
@@ -8,19 +8,26 @@ const HealthCheckDetails = () => {
   const [healthCheckData, setHealthCheckData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchHealthCheckDetails();
   }, [healthCheckId]);
 
-  const fetchHealthCheckDetails = async () => {
+  const fetchHealthCheckDetails = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      
       const response = await fetch(`http://localhost:8000/health-checks/${healthCheckId}`);
       const data = await response.json();
       
       if (data.success) {
         setHealthCheckData(data);
+        setError(null);
       } else {
         setError(data.message || 'Failed to fetch health check details');
       }
@@ -28,12 +35,62 @@ const HealthCheckDetails = () => {
       setError('Failed to connect to backend');
       console.error('Error fetching health check details:', err);
     } finally {
-      setLoading(false);
+      if (isRefresh) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
+  };
+
+  const handleRefresh = () => {
+    fetchHealthCheckDetails(true);
   };
 
   const handleViewCluster = (resultKey) => {
     navigate(`/health-check/${healthCheckId}/cluster/${resultKey}`);
+  };
+
+  const getClusterStatusInfo = (cluster) => {
+    const status = cluster.status || 'unknown';
+    
+    switch (status) {
+      case 'waiting':
+        return {
+          icon: <Clock className="h-4 w-4" />,
+          label: 'Waiting for upload',
+          color: 'bg-yellow-100 text-yellow-800',
+          canView: false
+        };
+      case 'processing':
+        return {
+          icon: <Loader2 className="h-4 w-4 animate-spin" />,
+          label: 'Processing',
+          color: 'bg-blue-100 text-blue-800',
+          canView: false
+        };
+      case 'completed':
+        return {
+          icon: <CheckCircle className="h-4 w-4" />,
+          label: 'Completed',
+          color: 'bg-green-100 text-green-800',
+          canView: true
+        };
+      case 'failed':
+        return {
+          icon: <XCircle className="h-4 w-4" />,
+          label: 'Failed',
+          color: 'bg-red-100 text-red-800',
+          canView: false
+        };
+      default:
+        return {
+          icon: <Activity className="h-4 w-4" />,
+          label: 'Unknown',
+          color: 'bg-gray-100 text-gray-800',
+          canView: false
+        };
+    }
   };
 
   const formatDate = (dateString) => {
@@ -160,11 +217,21 @@ const HealthCheckDetails = () => {
             <h1 className="text-2xl font-bold text-gray-900">{health_check.customer_name}</h1>
             <p className="text-gray-600">Multi-region health check analysis</p>
           </div>
-          <div className="text-right">
-            <div className={`text-lg font-semibold ${overallHealth.color}`}>
-              {overallHealth.status}
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+            <div className="text-right">
+              <div className={`text-lg font-semibold ${overallHealth.color}`}>
+                {overallHealth.status}
+              </div>
+              <div className="text-sm text-gray-500">Overall Status</div>
             </div>
-            <div className="text-sm text-gray-500">Overall Status</div>
           </div>
         </div>
       </div>
@@ -232,49 +299,81 @@ const HealthCheckDetails = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {region.clusters.map((cluster, clusterIndex) => {
                     const clusterData = cluster.data;
+                    const statusInfo = getClusterStatusInfo(cluster);
                     const healthStatus = clusterData?.health?.overall || 'Unknown';
                     const memoryUsed = clusterData?.clusterInfo?.memory?.used || 'N/A';
                     const licenseUsed = clusterData?.clusterInfo?.license?.usage || 'N/A';
                     const nodesCount = clusterData?.nodes?.length || 0;
                     
                     return (
-                      <div key={clusterIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors">
+                      <div key={clusterIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors">
                         <div className="flex justify-between items-start mb-3">
                           <div>
                             <h5 className="font-medium text-gray-900">{cluster.cluster_name}</h5>
                             <p className="text-xs text-gray-500">{cluster.filename}</p>
                           </div>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            healthStatus === 'CRITICAL' ? 'bg-red-100 text-red-800' :
-                            healthStatus === 'WARNING' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-green-100 text-green-800'
-                          }`}>
-                            {healthStatus}
-                          </span>
+                          <div className="flex flex-col items-end space-y-1">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
+                              {statusInfo.icon}
+                              <span className="ml-1">{statusInfo.label}</span>
+                            </span>
+                            {statusInfo.canView && healthStatus && (
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                healthStatus === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                                healthStatus === 'WARNING' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-green-100 text-green-800'
+                              }`}>
+                                {healthStatus}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         
-                        <div className="space-y-1 text-xs text-gray-600 mb-3">
-                          <div className="flex justify-between">
-                            <span>Nodes:</span>
-                            <span>{nodesCount}</span>
+                        {statusInfo.canView ? (
+                          <div className="space-y-1 text-xs text-gray-600 mb-3">
+                            <div className="flex justify-between">
+                              <span>Nodes:</span>
+                              <span>{nodesCount}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Memory:</span>
+                              <span>{memoryUsed}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>License:</span>
+                              <span>{licenseUsed}</span>
+                            </div>
                           </div>
-                          <div className="flex justify-between">
-                            <span>Memory:</span>
-                            <span>{memoryUsed}</span>
+                        ) : (
+                          <div className="text-xs text-gray-500 text-center py-6 mb-3">
+                            {cluster.status === 'waiting' ? 'Waiting for file upload...' :
+                             cluster.status === 'processing' ? 'Analyzing collectinfo...' :
+                             cluster.status === 'failed' ? `Failed: ${cluster.error || 'Unknown error'}` :
+                             'Waiting for processing'}
                           </div>
-                          <div className="flex justify-between">
-                            <span>License:</span>
-                            <span>{licenseUsed}</span>
-                          </div>
-                        </div>
+                        )}
                         
                         <button
                           onClick={() => handleViewCluster(cluster.result_key)}
-                          className="w-full inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                          disabled={!statusInfo.canView}
+                          className={`w-full inline-flex items-center justify-center px-3 py-2 border shadow-sm text-xs font-medium rounded-md transition-colors ${
+                            statusInfo.canView 
+                              ? 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50' 
+                              : 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed'
+                          }`}
                         >
-                          <Eye className="h-3 w-3 mr-1" />
-                          View Details
-                          <ChevronRight className="h-3 w-3 ml-1" />
+                          {statusInfo.canView ? (
+                            <>
+                              <Eye className="h-3 w-3 mr-1" />
+                              View Details
+                              <ChevronRight className="h-3 w-3 ml-1" />
+                            </>
+                          ) : (
+                            <>
+                              {statusInfo.icon}
+                              <span className="ml-1">{statusInfo.label}</span>
+                            </>
+                          )}
                         </button>
                       </div>
                     );

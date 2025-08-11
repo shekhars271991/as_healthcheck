@@ -66,6 +66,38 @@ const CreateHealthCheck = () => {
     return true;
   };
 
+  const uploadFilesInBackground = async (healthCheckId, regions) => {
+    try {
+      // Upload files for each region in the background
+      for (const region of regions) {
+        const formData = new FormData();
+        
+        // Add files
+        region.files.forEach(file => {
+          formData.append('files', file);
+        });
+        
+        // Add metadata
+        formData.append('region_name', region.name);
+
+        const uploadResponse = await fetch(`http://localhost:8000/health-checks/${healthCheckId}/upload`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const uploadData = await uploadResponse.json();
+        
+        if (!uploadData.success) {
+          console.error(`Failed to upload files for region ${region.name}:`, uploadData.message);
+        } else {
+          console.log(`Successfully started processing files for region: ${region.name}`);
+        }
+      }
+    } catch (err) {
+      console.error('Error uploading files in background:', err);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
@@ -98,32 +130,11 @@ const CreateHealthCheck = () => {
 
       const healthCheckId = createData.health_check_id;
 
-      // Then upload files for each region
-      for (const region of regions) {
-        const formData = new FormData();
-        
-        // Add files
-        region.files.forEach(file => {
-          formData.append('files', file);
-        });
-        
-        // Add metadata
-        formData.append('region_name', region.name);
-
-        const uploadResponse = await fetch(`http://localhost:8000/health-checks/${healthCheckId}/upload`, {
-          method: 'POST',
-          body: formData
-        });
-
-        const uploadData = await uploadResponse.json();
-        
-        if (!uploadData.success) {
-          throw new Error(`Failed to upload files for region ${region.name}: ${uploadData.message}`);
-        }
-      }
-
-      // Navigate to the health check details page
+      // Navigate to the health check details page immediately
       navigate(`/health-check/${healthCheckId}`);
+
+      // Upload files in the background (don't wait for completion)
+      uploadFilesInBackground(healthCheckId, regions);
 
     } catch (err) {
       setError(err.message || 'Failed to create health check');

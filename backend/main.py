@@ -1409,6 +1409,34 @@ async def create_multi_tier_health_check(
         key = ("healthcheck", "health_checks", health_check_id)
         aerospike_client.put(key, health_check_metadata)
         
+        # Create placeholder cluster entries immediately so they show up in the UI
+        cluster_count = 0
+        for region in regions:
+            region_name = region.get("region_name", "")
+            file_count = region.get("file_count", 0)
+            
+            for i in range(file_count):
+                cluster_count += 1
+                temp_cluster_name = f"pending_cluster_{cluster_count}"
+                result_key = f"{health_check_id}_{region_name}_{temp_cluster_name}".replace(" ", "_").lower()
+                
+                # Create placeholder cluster entry
+                placeholder_cluster = {
+                    "result_key": result_key,
+                    "health_check_id": health_check_id,
+                    "region_name": region_name,
+                    "cluster_name": temp_cluster_name,
+                    "filename": f"Waiting for file upload...",
+                    "status": "waiting",
+                    "created_at": datetime.now().isoformat(),
+                    "data": {}
+                }
+                
+                cluster_key = ("healthcheck", "cluster_results", result_key)
+                aerospike_client.put(cluster_key, placeholder_cluster)
+                
+        logger.info(f"Created {cluster_count} placeholder clusters for health check: {health_check_id}")
+        
         logger.info(f"Created health check: {health_check_id} for customer: {customer_name}")
         
         return JSONResponse({
@@ -1441,53 +1469,181 @@ async def upload_collectinfo_files(
         if not files or not region_name:
             raise HTTPException(status_code=400, detail="Files and region name are required")
         
+        # First, save files and create cluster entries with "processing" status
         processor = HealthDataProcessor()
         results = []
+        saved_files = []
         
+        # Find existing placeholder clusters for this region
+        placeholder_clusters = []
+        scan = aerospike_client.scan("healthcheck", "cluster_results")
+        
+        def find_placeholders(record):
+            key, metadata, bins = record
+            if (bins.get("health_check_id") == health_check_id and 
+                bins.get("region_name") == region_name and 
+                bins.get("status") == "waiting"):
+                placeholder_clusters.append({
+                    "key": key,
+                    "result_key": bins.get("result_key"),
+                    "cluster_name": bins.get("cluster_name")
+                })
+        
+        scan.foreach(find_placeholders)
+        logger.info(f"Found {len(placeholder_clusters)} placeholder clusters for region {region_name}")
+        
+        # Save all uploaded files and update placeholders
         for i, file in enumerate(files):
-            logger.info(f"Processing file {i+1}/{len(files)}: {file.filename}")
+            logger.info(f"Saving file {i+1}/{len(files)}: {file.filename}")
             
-            # Save uploaded file
+            # Save uploaded file immediately
             temp_file_path = await processor.save_uploaded_file(file)
             
-            # Extract if it's an archive
-            extracted_path = processor.extract_collectinfo(temp_file_path)
+            # Use existing placeholder if available, otherwise create new
+            if i < len(placeholder_clusters):
+                # Update existing placeholder
+                placeholder = placeholder_clusters[i]
+                result_key = placeholder["result_key"]
+                cluster_key = placeholder["key"]
+                temp_cluster_name = f"cluster_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i+1}"
+                
+                logger.info(f"Updating placeholder {placeholder['cluster_name']} -> {temp_cluster_name}")
+            else:
+                # Create new entry if we have more files than placeholders
+                temp_cluster_name = f"cluster_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i+1}"
+                result_key = f"{health_check_id}_{region_name}_{temp_cluster_name}".replace(" ", "_").lower()
+                cluster_key = ("healthcheck", "cluster_results", result_key)
+                
+                logger.info(f"Creating new cluster entry: {temp_cluster_name}")
             
-            # Extract cluster name from the collectinfo
-            cluster_name = processor.extract_cluster_name_from_collectinfo(extracted_path)
-            logger.info(f"Extracted cluster name: {cluster_name} for file: {file.filename}")
-            
-            # Run asadm commands
-            combined_output = processor.run_asadm_commands(extracted_path)
-            
-            # Parse with Gemini
-            parsed_data = processor.parse_with_gemini(combined_output)
-            
-            # Store result in Aerospike with composite key
-            result_key = f"{health_check_id}_{region_name}_{cluster_name}".replace(" ", "_").lower()
-            cluster_key = ("healthcheck", "cluster_results", result_key)
-            
-            cluster_result = {
-                "result_key": result_key,  # Store result key in the record
+            # Update/create cluster entry with processing status
+            cluster_entry = {
+                "result_key": result_key,
                 "health_check_id": health_check_id,
                 "region_name": region_name,
-                "cluster_name": cluster_name,
+                "cluster_name": temp_cluster_name,
                 "filename": file.filename,
-                "processed_at": datetime.now().isoformat(),
-                "data": parsed_data
+                "status": "processing",
+                "created_at": datetime.now().isoformat(),
+                "data": {}
             }
             
-            aerospike_client.put(cluster_key, cluster_result)
+            aerospike_client.put(cluster_key, cluster_entry)
             
-            results.append({
-                "cluster_name": cluster_name,
+            saved_files.append({
+                "temp_file_path": temp_file_path,
                 "filename": file.filename,
-                "status": "processed",
-                "result_key": result_key
+                "result_key": result_key,
+                "cluster_key": cluster_key,
+                "temp_cluster_name": temp_cluster_name
             })
             
-            # Cleanup temp files
-            processor.cleanup()
+            results.append({
+                "cluster_name": temp_cluster_name,
+                "filename": file.filename,
+                "status": "processing",
+                "result_key": result_key
+            })
+        
+        # Process files in background using asyncio task
+        import asyncio
+        
+        async def process_single_file(entry):
+            """Process a single collectinfo file in parallel"""
+            temp_file_path = entry["temp_file_path"]
+            filename = entry["filename"]
+            result_key = entry["result_key"]
+            cluster_key = entry["cluster_key"]
+            temp_cluster_name = entry["temp_cluster_name"]
+            
+            # Create a separate processor instance for each task to avoid conflicts
+            task_processor = HealthDataProcessor()
+            
+            try:
+                logger.info(f"[{result_key}] Background processing started: {filename}")
+                
+                # Extract if it's an archive
+                extracted_path = task_processor.extract_collectinfo(temp_file_path)
+                logger.info(f"[{result_key}] Extracted to: {extracted_path}")
+                
+                # Extract real cluster name from the collectinfo
+                real_cluster_name = task_processor.extract_cluster_name_from_collectinfo(extracted_path)
+                logger.info(f"[{result_key}] Extracted real cluster name: {real_cluster_name} for file: {filename}")
+                
+                # Run asadm commands (this is CPU intensive, run in thread pool)
+                import concurrent.futures
+                loop = asyncio.get_event_loop()
+                
+                logger.info(f"[{result_key}] Starting asadm commands...")
+                combined_output = await loop.run_in_executor(
+                    None, task_processor.run_asadm_commands, extracted_path
+                )
+                logger.info(f"[{result_key}] Completed asadm commands")
+                
+                # Parse with Gemini (this is I/O intensive, run in thread pool)
+                logger.info(f"[{result_key}] Starting Gemini parsing...")
+                parsed_data = await loop.run_in_executor(
+                    None, task_processor.parse_with_gemini, combined_output
+                )
+                logger.info(f"[{result_key}] Completed Gemini parsing")
+                
+                # Update cluster entry with real data
+                cluster_result = {
+                    "result_key": result_key,
+                    "health_check_id": health_check_id,
+                    "region_name": region_name,
+                    "cluster_name": real_cluster_name,  # Use real cluster name
+                    "filename": filename,
+                    "status": "completed",
+                    "created_at": datetime.now().isoformat(),
+                    "processed_at": datetime.now().isoformat(),
+                    "data": parsed_data
+                }
+                
+                aerospike_client.put(cluster_key, cluster_result)
+                logger.info(f"[{result_key}] Successfully completed processing: {filename} -> {real_cluster_name}")
+                
+            except Exception as e:
+                logger.error(f"[{result_key}] Error processing {filename}: {e}")
+                # Update status to failed
+                try:
+                    _, _, current_data = aerospike_client.get(cluster_key)
+                    if current_data:
+                        current_data.update({
+                            "status": "failed",
+                            "error": str(e),
+                            "processed_at": datetime.now().isoformat()
+                        })
+                        aerospike_client.put(cluster_key, current_data)
+                except Exception as update_error:
+                    logger.error(f"[{result_key}] Failed to update error status: {update_error}")
+            
+            finally:
+                # Cleanup this task's temp files
+                task_processor.cleanup()
+
+        async def async_process_files():
+            """Process all files in parallel using asyncio.gather"""
+            # Create tasks for parallel processing
+            tasks = [process_single_file(entry) for entry in saved_files]
+            
+            logger.info(f"Starting parallel processing of {len(tasks)} files")
+            
+            # Process all files in parallel
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Log any exceptions that occurred
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Task {i} failed with exception: {result}")
+            
+            logger.info(f"Completed parallel processing of {len(tasks)} files")
+            
+            # Note: Individual task cleanup happens in each process_single_file finally block
+        
+        # Start background processing
+        asyncio.create_task(async_process_files())
+        logger.info(f"Started background processing for {len(saved_files)} files")
         
         # Update health check status to completed
         health_check_key = ("healthcheck", "health_checks", health_check_id)
@@ -1550,7 +1706,10 @@ async def get_health_check_details(health_check_id: str):
                     "region_name": bins.get("region_name", ""),
                     "cluster_name": bins.get("cluster_name", ""),
                     "filename": bins.get("filename", ""),
+                    "status": bins.get("status", "unknown"),  # Add status field
                     "processed_at": bins.get("processed_at", ""),
+                    "created_at": bins.get("created_at", ""),
+                    "error": bins.get("error", None),  # Add error field for failed status
                     "data": bins.get("data", {})
                 })
         
