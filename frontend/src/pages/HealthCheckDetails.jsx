@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2, AlertCircle, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const HealthCheckDetails = () => {
   const { healthCheckId } = useParams();
@@ -238,6 +239,115 @@ const HealthCheckDetails = () => {
     setDeleteConfirmCluster(null);
   };
 
+  const exportLicenseInfo = () => {
+    const exportData = [];
+    let sno = 1;
+
+    regions.forEach(region => {
+      region.clusters?.forEach(cluster => {
+        const clusterData = cluster.data;
+        const realClusterName = clusterData?.clusterInfo?.name || cluster.cluster_name;
+        const namespaceCount = clusterData?.namespaces?.length || 0;
+        
+        // Calculate total used memory
+        const totalUsedMemory = clusterData?.clusterInfo?.memory?.used || '0 GB';
+        const usedMemoryValue = parseFloat(totalUsedMemory.replace(/[^0-9.]/g, '')) || 0;
+        
+        // Calculate unique data (sum from all namespaces)
+        const uniqueData = clusterData?.namespaces?.reduce((total, ns) => {
+          const uniqueValue = parseFloat(ns.clientWrites?.uniqueData?.replace(/[^0-9.]/g, '') || 0);
+          return total + uniqueValue;
+        }, 0) || 0;
+
+        exportData.push({
+          'S.No': sno++,
+          'Region': region.region_name || '',
+          'Collectinfo Filename': cluster.filename || '',
+          'Cluster Name': realClusterName,
+          'Namespace Count': namespaceCount, // Keep as number
+          'Total Used Memory (GB)': usedMemoryValue, // Keep as number
+          'Unique Data (GB)': uniqueData // Keep as number
+        });
+      });
+    });
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(exportData);
+
+    // Add summary rows with formulas
+    const dataRowCount = exportData.length;
+    const summaryStartRow = dataRowCount + 2; // Leave one empty row
+    
+    // Add empty row
+    XLSX.utils.sheet_add_aoa(ws, [[]], { origin: `A${dataRowCount + 2}` });
+    
+    // Add summary header
+    XLSX.utils.sheet_add_aoa(ws, [['TOTALS:']], { origin: `A${summaryStartRow + 1}` });
+    
+    // Add formula rows
+    const formulas = [
+      ['', '', '', 'Total Namespace Count:', { f: `SUM(E2:E${dataRowCount + 1})` }, '', ''],
+      ['', '', '', 'Total Used Memory (GB):', '', { f: `SUM(F2:F${dataRowCount + 1})` }, ''],
+      ['', '', '', 'Total Unique Data (GB):', '', '', { f: `SUM(G2:G${dataRowCount + 1})` }]
+    ];
+    
+    XLSX.utils.sheet_add_aoa(ws, formulas, { origin: `A${summaryStartRow + 2}` });
+
+    // Set column widths for better readability
+    const colWidths = [
+      { wch: 8 },   // S.No
+      { wch: 15 },  // Region
+      { wch: 30 },  // Collectinfo Filename
+      { wch: 25 },  // Cluster Name
+      { wch: 18 },  // Namespace Count
+      { wch: 22 },  // Total Used Memory
+      { wch: 18 }   // Unique Data
+    ];
+    ws['!cols'] = colWidths;
+
+    // Style the summary section (make it bold)
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let row = summaryStartRow; row <= summaryStartRow + 4; row++) {
+      for (let col = 0; col <= 6; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+        if (!ws[cellAddress]) continue;
+        
+        if (!ws[cellAddress].s) ws[cellAddress].s = {};
+        ws[cellAddress].s.font = { bold: true };
+        
+        // Add background color to total row
+        if (row >= summaryStartRow + 2) {
+          ws[cellAddress].s.fill = { fgColor: { rgb: "E6F3FF" } };
+        }
+      }
+    }
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'License Info');
+
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    const filename = `license-info-${healthCheckData?.customer_name || 'export'}-${timestamp}.xlsx`;
+
+    // Download the file
+    XLSX.writeFile(wb, filename);
+
+    // Show success notification
+    const successNotification = {
+      id: Date.now() + Math.random(),
+      type: 'success',
+      message: `License info exported successfully as ${filename}`,
+      timestamp: new Date()
+    };
+    setUploadNotifications(prev => [...prev, successNotification]);
+    
+    // Auto-remove notification after 3 seconds
+    setTimeout(() => {
+      setUploadNotifications(prev => prev.filter(n => n.id !== successNotification.id));
+    }, 3000);
+  };
+
   const handleViewCluster = (resultKey) => {
     navigate(`/health-check/${healthCheckId}/cluster/${resultKey}`);
   };
@@ -449,12 +559,23 @@ const HealthCheckDetails = () => {
               <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
-            {/* <div className="text-right">
-              <div className={`text-lg font-semibold ${overallHealth.color}`}>
-                {overallHealth.status}
-              </div>
-              <div className="text-sm text-gray-500">Overall Status</div>
-            </div> */}
+                        <div className="flex items-center space-x-3">
+              <button
+                onClick={exportLicenseInfo}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export License Info
+              </button>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
