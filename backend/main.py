@@ -648,6 +648,9 @@ Data to parse:
                 parsed_data['parsed_at'] = datetime.now().isoformat()
                 parsed_data['ai_parsed'] = True
                 
+                # Normalize all data sizes to GB format
+                self.normalize_data_sizes(parsed_data)
+                
                 # Calculate derived metrics for each namespace
                 self.calculate_derived_metrics(parsed_data)
                 
@@ -675,6 +678,108 @@ Data to parse:
         except Exception as e:
             logger.error(f"Error calling Gemini API: {e}")
             return self.create_fallback_structure(combined_output, f"Gemini API error: {e}")
+
+    def normalize_to_gb(self, value_str: str) -> str:
+        """Convert data size values to GB format"""
+        try:
+            if not value_str or value_str == 'N/A' or value_str == 'Unknown':
+                return value_str
+            
+            # Extract numeric value and unit
+            value_str = str(value_str).strip()
+            
+            # Handle cases like "4.339 GB", "1024 MB", "512.5 TB", etc.
+            import re
+            match = re.match(r'([0-9.,]+)\s*([A-Za-z]*)', value_str)
+            
+            if not match:
+                return value_str  # Return as-is if no match
+            
+            numeric_str = match.group(1).replace(',', '')
+            unit = match.group(2).upper()
+            
+            try:
+                numeric_value = float(numeric_str)
+            except ValueError:
+                return value_str  # Return as-is if can't parse number
+            
+            # Convert to GB
+            if unit == 'B' or unit == 'BYTES':
+                gb_value = numeric_value / (1024 ** 3)
+            elif unit == 'KB' or unit == 'K':
+                gb_value = numeric_value / (1024 ** 2)
+            elif unit == 'MB' or unit == 'M':
+                gb_value = numeric_value / 1024
+            elif unit == 'GB' or unit == 'G' or unit == '':
+                gb_value = numeric_value
+            elif unit == 'TB' or unit == 'T':
+                gb_value = numeric_value * 1024
+            elif unit == 'PB' or unit == 'P':
+                gb_value = numeric_value * (1024 ** 2)
+            else:
+                # If unknown unit, return as-is
+                return value_str
+            
+            # Format with appropriate precision
+            if gb_value < 0.01:
+                return f"{gb_value:.4f} GB"
+            elif gb_value < 1:
+                return f"{gb_value:.3f} GB"
+            elif gb_value < 10:
+                return f"{gb_value:.2f} GB"
+            else:
+                return f"{gb_value:.1f} GB"
+                
+        except Exception as e:
+            logger.warning(f"Failed to normalize value '{value_str}' to GB: {e}")
+            return value_str
+
+    def normalize_data_sizes(self, parsed_data: Dict[str, Any]) -> None:
+        """Normalize all data size fields to GB format"""
+        try:
+            # Normalize cluster-level memory data
+            if 'clusterInfo' in parsed_data and 'memory' in parsed_data['clusterInfo']:
+                memory = parsed_data['clusterInfo']['memory']
+                if 'total' in memory:
+                    memory['total'] = self.normalize_to_gb(memory['total'])
+                if 'used' in memory:
+                    memory['used'] = self.normalize_to_gb(memory['used'])
+            
+            # Normalize cluster-level license data
+            if 'clusterInfo' in parsed_data and 'license' in parsed_data['clusterInfo']:
+                license_info = parsed_data['clusterInfo']['license']
+                if 'usage' in license_info:
+                    license_info['usage'] = self.normalize_to_gb(license_info['usage'])
+                if 'total' in license_info:
+                    license_info['total'] = self.normalize_to_gb(license_info['total'])
+            
+            # Normalize namespace-level data
+            if 'namespaces' in parsed_data:
+                for namespace in parsed_data['namespaces']:
+                    # Normalize memory usage
+                    if 'memoryUsed' in namespace:
+                        namespace['memoryUsed'] = self.normalize_to_gb(namespace['memoryUsed'])
+                    
+                    # Normalize license usage
+                    if 'license' in namespace:
+                        license_info = namespace['license']
+                        if 'usage' in license_info:
+                            license_info['usage'] = self.normalize_to_gb(license_info['usage'])
+                    
+                    # Normalize usage info
+                    if 'usageInfo' in namespace:
+                        usage_info = namespace['usageInfo']
+                        if 'primaryIndex' in usage_info and 'used' in usage_info['primaryIndex']:
+                            usage_info['primaryIndex']['used'] = self.normalize_to_gb(usage_info['primaryIndex']['used'])
+                        if 'secondaryIndex' in usage_info and 'used' in usage_info['secondaryIndex']:
+                            usage_info['secondaryIndex']['used'] = self.normalize_to_gb(usage_info['secondaryIndex']['used'])
+                        if 'storageEngine' in usage_info and 'used' in usage_info['storageEngine']:
+                            usage_info['storageEngine']['used'] = self.normalize_to_gb(usage_info['storageEngine']['used'])
+                            
+            logger.info("Successfully normalized all data sizes to GB format")
+            
+        except Exception as e:
+            logger.error(f"Error normalizing data sizes: {e}")
 
     def calculate_derived_metrics(self, parsed_data: Dict[str, Any]) -> None:
         """Calculate derived metrics for namespaces"""
@@ -706,9 +811,10 @@ Data to parse:
                                 numeric_value = float(''.join(c for c in str(value).replace(',', '') if c.isdigit() or c == '.'))
                                 xdr_client_write_success += numeric_value
                         
-                        # Extract license usage (remove units like GB, MB, etc.)
-                        license_usage_str = str(license_info.get('usage', '0'))
-                        license_usage = float(''.join(c for c in license_usage_str.replace(',', '') if c.isdigit() or c == '.'))
+                        # Extract license usage (already normalized to GB, so extract numeric part)
+                        license_usage_str = str(license_info.get('usage', '0 GB'))
+                        # Remove 'GB' and any other non-numeric characters except decimal point
+                        license_usage = float(''.join(c for c in license_usage_str.replace('GB', '').replace(',', '').strip() if c.isdigit() or c == '.'))
                         
                         # Calculate unique writes percentage
                         # Formula: (Client Write Success - XDR Client Write Success) * 100 / Client Write Success
@@ -726,7 +832,7 @@ Data to parse:
                         client_writes['clientWriteSuccess'] = int(client_write_success)
                         client_writes['xdrClientWriteSuccess'] = int(xdr_client_write_success)
                         client_writes['uniqueWritesPercent'] = f"{unique_writes_percent:.2f}%"
-                        client_writes['uniqueData'] = f"{unique_data:.2f}"
+                        client_writes['uniqueData'] = f"{unique_data:.2f} GB"
                         
                         logger.info(f"Calculated metrics for namespace {namespace.get('name', 'Unknown')}: "
                                    f"clientWriteSuccess={int(client_write_success)} (aggregated from {len(client_write_per_node)} nodes), "
