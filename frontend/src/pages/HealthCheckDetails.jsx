@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2, AlertCircle, Download, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2, AlertCircle, Download, RotateCcw, MapPin } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const HealthCheckDetails = () => {
@@ -23,6 +23,9 @@ const HealthCheckDetails = () => {
   const [deleteConfirmCluster, setDeleteConfirmCluster] = useState(null); // Confirmation dialog state
   const [uploadNotifications, setUploadNotifications] = useState([]); // Track upload notifications
   const [retryingCluster, setRetryingCluster] = useState(null); // Track which cluster is being retried
+  const [showAddRegionDialog, setShowAddRegionDialog] = useState(false); // Track add region dialog
+  const [newRegionName, setNewRegionName] = useState(''); // New region name input
+  const [addingRegion, setAddingRegion] = useState(false); // Track region creation process
 
   useEffect(() => {
     fetchHealthCheckDetails();
@@ -391,6 +394,60 @@ const HealthCheckDetails = () => {
     }
   };
 
+  const handleAddNewRegion = async () => {
+    if (!newRegionName.trim()) {
+      alert('Please enter a region name');
+      return;
+    }
+
+    try {
+      setAddingRegion(true);
+      
+      // Create a placeholder cluster for the new region
+      const response = await fetch(`http://localhost:8000/health-checks/${healthCheckId}/add-region`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          region_name: newRegionName.trim()
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Refresh data to show the new region
+        fetchHealthCheckDetails(true);
+        
+        // Reset dialog state
+        setShowAddRegionDialog(false);
+        setNewRegionName('');
+        
+        // Show success notification
+        const successNotification = {
+          id: Date.now(),
+          type: 'success',
+          message: `New region "${newRegionName.trim()}" added successfully`,
+          timestamp: new Date()
+        };
+        setUploadNotifications(prev => [...prev, successNotification]);
+        
+        // Auto-remove notification after 3 seconds
+        setTimeout(() => {
+          setUploadNotifications(prev => prev.filter(n => n.id !== successNotification.id));
+        }, 3000);
+      } else {
+        alert(`Failed to add region: ${data.message}`);
+      }
+    } catch (error) {
+      console.error('Error adding region:', error);
+      alert('Failed to add region');
+    } finally {
+      setAddingRegion(false);
+    }
+  };
+
   const getClusterStatusInfo = (cluster) => {
     const status = cluster.status || 'unknown';
     
@@ -414,6 +471,13 @@ const HealthCheckDetails = () => {
           icon: <CheckCircle className="h-4 w-4" />,
           label: 'Completed',
           color: 'bg-green-100 text-green-800',
+          canView: true
+        };
+      case 'partial':
+        return {
+          icon: <AlertCircle className="h-4 w-4" />,
+          label: 'Partial Data',
+          color: 'bg-yellow-100 text-yellow-800',
           canView: true
         };
       case 'failed':
@@ -863,11 +927,14 @@ const HealthCheckDetails = () => {
                     const memoryUsed = clusterData?.clusterInfo?.memory?.used || 'N/A';
                     const namespaceCount = clusterData?.namespaces?.length || 0;
                     
-                    // Check if this is an error cluster (either status failed or shows "Error" in data)
+                    // Check if this is an error cluster (either status failed/partial or shows "Error"/"Unknown" in data)
                     const isErrorCluster = cluster.status === 'failed' || 
+                                          cluster.status === 'partial' ||
                                           realClusterName === 'Error' || 
                                           totalMemory === 'Error' || 
-                                          memoryUsed === 'Error';
+                                          totalMemory === 'Unknown' ||
+                                          memoryUsed === 'Error' || 
+                                          memoryUsed === 'Unknown';
                     
                     // Calculate unique memory used (sum of all namespace unique data)
                     const uniqueMemoryUsed = clusterData?.namespaces?.reduce((total, ns) => {
@@ -903,6 +970,9 @@ const HealthCheckDetails = () => {
                                     {cluster.status === 'completed' && (
                                       <div className="w-2 h-2 bg-green-500 rounded-full" title="Completed"></div>
                                     )}
+                                    {cluster.status === 'partial' && (
+                                      <div className="w-2 h-2 bg-yellow-500 rounded-full" title="Partial Data - Parsing Issues"></div>
+                                    )}
                                     {cluster.status === 'processing' && (
                                       <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" title="Processing"></div>
                                     )}
@@ -917,39 +987,44 @@ const HealthCheckDetails = () => {
                               {cluster.filename}
                             </p>
                           </div>
-                          <div className="flex items-center space-x-2">
-                                                         {isErrorCluster && (
-                               <button
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   handleRetryCluster(cluster.result_key);
-                                 }}
-                                 disabled={retryingCluster === cluster.result_key || deletingCluster === cluster.result_key}
-                                 className="p-2 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200 hover:text-blue-700 transition-colors disabled:opacity-50 border border-blue-200"
-                                 title={deletingCluster === cluster.result_key ? "Cannot retry while deleting" : "Retry processing"}
-                               >
-                                 {retryingCluster === cluster.result_key ? (
-                                   <Loader2 className="h-4 w-4 animate-spin" />
-                                 ) : (
-                                   <RotateCcw className="h-4 w-4" />
-                                 )}
-                               </button>
-                             )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                confirmDeleteCluster(cluster);
-                              }}
-                              disabled={deletingCluster === cluster.result_key || retryingCluster === cluster.result_key}
-                              className="p-2 rounded-md bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-50 border border-gray-200"
-                              title={retryingCluster === cluster.result_key ? "Cannot delete while retrying" : "Delete cluster"}
-                            >
-                              {deletingCluster === cluster.result_key ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                            </button>
+                                                    <div className="flex items-center space-x-2">
+                            {retryingCluster === cluster.result_key ? (
+                              <div className="flex items-center px-3 py-2 text-sm text-blue-600 bg-blue-50 rounded-md border border-blue-200">
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Retrying...
+                              </div>
+                            ) : (
+                              <>
+                                {isErrorCluster && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRetryCluster(cluster.result_key);
+                                    }}
+                                    disabled={deletingCluster === cluster.result_key}
+                                    className="p-2 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200 hover:text-blue-700 transition-colors disabled:opacity-50 border border-blue-200"
+                                    title="Retry processing"
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    confirmDeleteCluster(cluster);
+                                  }}
+                                  disabled={deletingCluster === cluster.result_key}
+                                  className="p-2 rounded-md bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-50 border border-gray-200"
+                                  title="Delete cluster"
+                                >
+                                  {deletingCluster === cluster.result_key ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                         
@@ -971,34 +1046,31 @@ const HealthCheckDetails = () => {
                               <span>Unique Memory:</span>
                               <span>{uniqueMemoryUsed}</span>
                             </div>
-                            {isErrorCluster && (
+                                                        {isErrorCluster && (
                               <div className="mt-2 pt-2 border-t border-red-200">
                                 <div className="text-red-600 font-medium text-xs mb-2">⚠️ Parsing errors detected</div>
-                                                                 <button
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     handleRetryCluster(cluster.result_key);
-                                   }}
-                                   disabled={retryingCluster === cluster.result_key || deletingCluster === cluster.result_key}
-                                   className="w-full inline-flex items-center justify-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50"
-                                 >
-                                   {retryingCluster === cluster.result_key ? (
-                                     <>
-                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                       Retrying...
-                                     </>
-                                   ) : deletingCluster === cluster.result_key ? (
-                                     <>
-                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                       Deleting...
-                                     </>
-                                   ) : (
-                                     <>
-                                       <RotateCcw className="h-3 w-3 mr-1" />
-                                       Retry Processing
-                                     </>
-                                   )}
-                                 </button>
+                                {retryingCluster === cluster.result_key ? (
+                                  <div className="w-full flex items-center justify-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded">
+                                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    Retrying...
+                                  </div>
+                                ) : deletingCluster === cluster.result_key ? (
+                                  <div className="w-full flex items-center justify-center px-2 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded">
+                                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    Deleting...
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRetryCluster(cluster.result_key);
+                                    }}
+                                    className="w-full inline-flex items-center justify-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200"
+                                  >
+                                    <RotateCcw className="h-3 w-3 mr-1" />
+                                    Retry Processing
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1014,31 +1086,28 @@ const HealthCheckDetails = () => {
                                <div>
                                  <div className="font-medium">❌ Processing Failed</div>
                                  <div className="mt-1 text-xs">{cluster.error || 'Unknown error'}</div>
-                                 <button
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     handleRetryCluster(cluster.result_key);
-                                   }}
-                                   disabled={retryingCluster === cluster.result_key || deletingCluster === cluster.result_key}
-                                   className="mt-2 inline-flex items-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50"
-                                 >
-                                   {retryingCluster === cluster.result_key ? (
-                                     <>
-                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                       Retrying...
-                                     </>
-                                   ) : deletingCluster === cluster.result_key ? (
-                                     <>
-                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                       Deleting...
-                                     </>
-                                   ) : (
-                                     <>
-                                       <RotateCcw className="h-3 w-3 mr-1" />
-                                       Retry
-                                     </>
-                                   )}
-                                 </button>
+                                 {retryingCluster === cluster.result_key ? (
+                                   <div className="mt-2 inline-flex items-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded">
+                                     <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                     Retrying...
+                                   </div>
+                                 ) : deletingCluster === cluster.result_key ? (
+                                   <div className="mt-2 inline-flex items-center px-2 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded">
+                                     <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                     Deleting...
+                                   </div>
+                                 ) : (
+                                   <button
+                                     onClick={(e) => {
+                                       e.stopPropagation();
+                                       handleRetryCluster(cluster.result_key);
+                                     }}
+                                     className="mt-2 inline-flex items-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200"
+                                   >
+                                     <RotateCcw className="h-3 w-3 mr-1" />
+                                     Retry
+                                   </button>
+                                 )}
                                </div>
                              ) :
                              'Waiting for processing'}
@@ -1053,6 +1122,17 @@ const HealthCheckDetails = () => {
             </div>
           );
         })}
+        
+        {/* Add Region Button - Bottom Center */}
+        <div className="mt-8 flex justify-center">
+          <button
+            onClick={() => setShowAddRegionDialog(true)}
+            className="inline-flex items-center px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Region
+          </button>
+        </div>
       </div>
 
       {/* Delete Confirmation Dialog */}
@@ -1099,6 +1179,66 @@ const HealthCheckDetails = () => {
                   'Delete'
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Region Dialog */}
+      {showAddRegionDialog && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100">
+                <MapPin className="h-6 w-6 text-blue-600" />
+              </div>
+              <h3 className="text-lg leading-6 font-medium text-gray-900 mt-4 text-center">Add New Region</h3>
+              <div className="mt-4 px-7 py-3">
+                <p className="text-sm text-gray-500 mb-4 text-center">
+                  Enter a name for the new region. You can upload cluster files to this region after it's created.
+                </p>
+                <input
+                  type="text"
+                  value={newRegionName}
+                  onChange={(e) => setNewRegionName(e.target.value)}
+                  placeholder="Enter region name..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !addingRegion) {
+                      handleAddNewRegion();
+                    }
+                  }}
+                  disabled={addingRegion}
+                />
+              </div>
+              <div className="items-center px-4 py-3">
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowAddRegionDialog(false);
+                      setNewRegionName('');
+                    }}
+                    disabled={addingRegion}
+                    className="flex-1 px-4 py-2 bg-gray-300 text-gray-800 text-base font-medium rounded-md shadow-sm hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddNewRegion}
+                    disabled={addingRegion || !newRegionName.trim()}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  >
+                    {addingRegion ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2 inline-block" />
+                        Adding...
+                      </>
+                    ) : (
+                      'Add Region'
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

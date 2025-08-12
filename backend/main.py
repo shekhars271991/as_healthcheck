@@ -820,11 +820,15 @@ Data to parse:
                 logger.error(f"Cleaned Response: {cleaned_response}")
                 
                 # Fallback to basic structure with extracted data
-                return self.create_fallback_structure(combined_output, ai_response)
+                fallback_data = self.create_fallback_structure(combined_output, f"JSON parsing failed: {str(e)}")
+                fallback_data['parsing_failed'] = True
+                return fallback_data
                 
         except Exception as e:
             logger.error(f"Error calling Gemini API: {e}")
-            return self.create_fallback_structure(combined_output, f"Gemini API error: {e}")
+            fallback_data = self.create_fallback_structure(combined_output, f"Gemini API error: {e}")
+            fallback_data['parsing_failed'] = True
+            return fallback_data
 
     def normalize_to_gb(self, value_str: str) -> str:
         """Convert data size values to GB format"""
@@ -1601,13 +1605,18 @@ async def upload_collectinfo_files(
                 logger.info(f"[{result_key}] Completed Gemini parsing")
                 
                 # Update cluster entry with real data
+                # Check if parsing failed and set appropriate status
+                status = "completed"
+                if parsed_data.get('parsing_failed', False):
+                    status = "partial"  # New status for clusters with parsing issues
+                
                 cluster_result = {
                     "result_key": result_key,
                     "health_check_id": health_check_id,
                     "region_name": region_name,
                     "cluster_name": real_cluster_name,  # Use real cluster name
                     "filename": filename,
-                    "status": "completed",
+                    "status": status,
                     "created_at": datetime.now().isoformat(),
                     "processed_at": datetime.now().isoformat(),
                     "data": parsed_data
@@ -1898,16 +1907,18 @@ async def retry_failed_cluster(health_check_id: str, result_key: str):
         if not cluster_data:
             raise HTTPException(status_code=404, detail="Cluster not found")
         
-        # Check if cluster has errors (either failed status or error data)
+        # Check if cluster has errors (failed, partial status, or error data)
         cluster_status = cluster_data.get("status")
         cluster_has_errors = (
             cluster_status == "failed" or
+            cluster_status == "partial" or
             cluster_data.get("data", {}).get("clusterInfo", {}).get("name") == "Error" or
-            cluster_data.get("data", {}).get("clusterInfo", {}).get("memory", {}).get("total") == "Error"
+            cluster_data.get("data", {}).get("clusterInfo", {}).get("memory", {}).get("total") == "Error" or
+            cluster_data.get("data", {}).get("clusterInfo", {}).get("memory", {}).get("total") == "Unknown"
         )
         
         if not cluster_has_errors:
-            raise HTTPException(status_code=400, detail="Only failed or error clusters can be retried")
+            raise HTTPException(status_code=400, detail="Only failed, partial, or error clusters can be retried")
         
         # Check if the original file still exists in temp directory
         filename = cluster_data.get("filename", "")
@@ -1985,13 +1996,18 @@ async def retry_failed_cluster(health_check_id: str, result_key: str):
                 logger.info(f"[RETRY-{result_key}] Completed Gemini parsing")
                 
                 # Update cluster entry with new data (keeping compatibility)
+                # Check if parsing failed and set appropriate status
+                status = "completed"
+                if parsed_data.get('parsing_failed', False):
+                    status = "partial"  # New status for clusters with parsing issues
+                
                 cluster_result = {
                     "result_key": result_key,
                     "health_check_id": health_check_id,
                     "region_name": region_name,
                     "cluster_name": real_cluster_name,
                     "filename": filename,
-                    "status": "completed",
+                    "status": status,
                     "created_at": cluster_data.get("created_at", datetime.now().isoformat()),
                     "processed_at": datetime.now().isoformat(),
                     "retry_at": datetime.now().isoformat(),
@@ -2032,6 +2048,72 @@ async def retry_failed_cluster(health_check_id: str, result_key: str):
         return JSONResponse({
             "success": False,
             "message": f"Error starting retry: {str(e)}"
+        }, status_code=500)
+
+@app.post("/health-checks/{health_check_id}/add-region")
+async def add_new_region(health_check_id: str, region_data: dict):
+    """Add a new region to an existing health check"""
+    try:
+        if not aerospike_client:
+            raise HTTPException(status_code=500, detail="Aerospike not connected")
+        
+        region_name = region_data.get("region_name")
+        if not region_name:
+            raise HTTPException(status_code=400, detail="Region name is required")
+        
+        # Verify the health check exists
+        health_check_key = ("healthcheck", "health_checks", health_check_id)
+        _, _, health_check_data = aerospike_client.get(health_check_key)
+        
+        if not health_check_data:
+            raise HTTPException(status_code=404, detail="Health check not found")
+        
+        # Check if region already exists
+        scan = aerospike_client.scan("healthcheck", "cluster_results")
+        existing_regions = set()
+        
+        def check_existing_regions(record):
+            key, metadata, bins = record
+            if bins.get("health_check_id") == health_check_id:
+                existing_regions.add(bins.get("region_name", ""))
+        
+        scan.foreach(check_existing_regions)
+        
+        if region_name in existing_regions:
+            raise HTTPException(status_code=400, detail=f"Region '{region_name}' already exists")
+        
+        # Create a placeholder cluster for the new region
+        result_key = f"{health_check_id}_{region_name}_placeholder".replace(" ", "_").lower()
+        
+        placeholder_cluster = {
+            "result_key": result_key,
+            "health_check_id": health_check_id,
+            "region_name": region_name,
+            "cluster_name": f"waiting_for_upload",
+            "filename": "Waiting for file upload...",
+            "status": "waiting",
+            "created_at": datetime.now().isoformat(),
+            "data": {}
+        }
+        
+        cluster_key = ("healthcheck", "cluster_results", result_key)
+        aerospike_client.put(cluster_key, placeholder_cluster)
+        
+        logger.info(f"Added new region '{region_name}' to health check: {health_check_id}")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"Region '{region_name}' added successfully",
+            "region_name": region_name
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding region to health check {health_check_id}: {e}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Error adding region: {str(e)}"
         }, status_code=500)
 
 if __name__ == "__main__":
