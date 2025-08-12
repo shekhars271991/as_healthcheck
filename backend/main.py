@@ -40,6 +40,10 @@ class HealthCheckSummary(BaseModel):
     clusters_count: int
     status: str
 
+# Check for verbose mode from environment or command line
+import sys
+VERBOSE_MODE = '--verbose' in sys.argv or '-v' in sys.argv or os.getenv('VERBOSE', '').lower() in ('true', '1')
+
 # Configure logging to write to file
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
@@ -50,9 +54,12 @@ if log_file.exists():
     log_file.unlink()  # Delete the old log file
     print("Cleared previous log file")
 
+# Set logging level based on verbose mode
+log_level = logging.DEBUG if VERBOSE_MODE else logging.WARNING
+
 # Configure logging with both file and console handlers
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_dir / "backend.log"),
@@ -60,6 +67,11 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+if VERBOSE_MODE:
+    logger.info("Verbose logging enabled")
+else:
+    logger.warning("Logging level set to WARNING (errors and critical only). Use --verbose or -v for detailed logs")
 
 app = FastAPI(title="Aerospike Health Check Backend", version="1.0.0")
 
@@ -76,9 +88,9 @@ app.add_middleware(
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if GEMINI_API_KEY and GEMINI_API_KEY != 'your_gemini_api_key_here':
     genai.configure(api_key=GEMINI_API_KEY)
-    logger.info("Gemini API key configured from environment")
+    logger.debug("Gemini API key configured from environment")
 else:
-    logger.warning("Gemini API key not found in environment variables. Please set GEMINI_API_KEY in .env file")
+    logger.error("Gemini API key not found in environment variables. Please set GEMINI_API_KEY in .env file")
 
 # Aerospike configuration
 AEROSPIKE_CONFIG = {
@@ -91,7 +103,7 @@ AEROSPIKE_CONFIG = {
 # Initialize Aerospike client
 try:
     aerospike_client = aerospike.client(AEROSPIKE_CONFIG).connect()
-    logger.info("Connected to Aerospike successfully")
+    logger.debug("Connected to Aerospike successfully")
 except Exception as e:
     logger.error(f"Failed to connect to Aerospike: {e}")
     aerospike_client = None
@@ -117,7 +129,7 @@ ASADM_COMMANDS = [
 class HealthDataProcessor:
     def __init__(self):
         self.temp_dir = Path(tempfile.mkdtemp())
-        logger.info(f"Created temp directory: {self.temp_dir}")
+        logger.debug(f"Created temp directory: {self.temp_dir}")
     
     async def save_uploaded_file(self, uploaded_file) -> Path:
         """Save uploaded file to temp directory"""
@@ -496,7 +508,7 @@ class HealthDataProcessor:
     
     def run_asadm_commands(self, file_path: Path) -> Dict[str, Any]:
         """Run asadm commands and capture output"""
-        logger.info("Starting asadm command execution...")
+        logger.debug("Starting asadm command execution...")
         logger.info(f"Using file: {file_path}")
         
         results = {}
@@ -802,14 +814,14 @@ Data to parse:
                 self.calculate_derived_metrics(parsed_data)
                 
                 # Log the complete flow for debugging
-                logger.info("=== GEMINI PROMPT ===")
-                logger.info(prompt)
-                logger.info("=== GEMINI RAW RESPONSE ===")
-                logger.info(ai_response)
-                logger.info("=== GEMINI CLEANED RESPONSE ===")
-                logger.info(cleaned_response)
-                logger.info("=== FINAL PARSED DATA ===")
-                logger.info(json.dumps(parsed_data, indent=2))
+                logger.debug("=== GEMINI PROMPT ===")
+                logger.debug(prompt)
+                logger.debug("=== GEMINI RAW RESPONSE ===")
+                logger.debug(ai_response)
+                logger.debug("=== GEMINI CLEANED RESPONSE ===")
+                logger.debug(cleaned_response)
+                logger.debug("=== FINAL PARSED DATA ===")
+                logger.debug(json.dumps(parsed_data, indent=2))
                 
                 logger.info("Successfully parsed data with Gemini")
                 return parsed_data
@@ -1219,10 +1231,10 @@ processor = HealthDataProcessor()
 @app.post("/upload")
 async def upload_collectinfo(file: UploadFile = File(...)):
     """Upload and process collectinfo file"""
-    logger.info(f"=== Starting file upload process ===")
-    logger.info(f"File received: {file.filename}")
-    logger.info(f"File size: {file.size} bytes")
-    logger.info(f"Content type: {file.content_type}")
+    logger.debug(f"=== Starting file upload process ===")
+    logger.debug(f"File received: {file.filename}")
+    logger.debug(f"File size: {file.size} bytes")
+    logger.debug(f"Content type: {file.content_type}")
     
     try:
         if not file.filename:
@@ -1241,7 +1253,7 @@ async def upload_collectinfo(file: UploadFile = File(...)):
         # Run asadm commands directly on the uploaded file
         logger.info("Running asadm commands on uploaded file...")
         asadm_results = processor.run_asadm_commands(file_path)
-        logger.info(f"Asadm commands completed. {len(asadm_results)} commands executed")
+        logger.debug(f"Asadm commands completed. {len(asadm_results)} commands executed")
         
         # Combine all asadm outputs
         logger.info("Combining asadm command outputs...")
@@ -1258,15 +1270,15 @@ async def upload_collectinfo(file: UploadFile = File(...)):
         logger.info(f"Combined output length: {len(combined_output)} characters")
         
         # Parse with Gemini
-        logger.info("Parsing data with Gemini...")
+        logger.debug("Parsing data with Gemini...")
         parsed_data = processor.parse_with_gemini(combined_output)
-        logger.info("Gemini parsing completed")
+        logger.debug("Gemini parsing completed")
         
         # Cleanup
         logger.info("Cleaning up temporary files...")
         processor.cleanup()
         
-        logger.info("=== File upload process completed successfully ===")
+        logger.debug("=== File upload process completed successfully ===")
         
         return JSONResponse({
             "success": True,
@@ -1276,14 +1288,13 @@ async def upload_collectinfo(file: UploadFile = File(...)):
         })
         
     except Exception as e:
-        logger.error(f"=== File upload process failed ===")
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Error message: {str(e)}")
-        logger.error(f"Error details: {e}")
+        logger.error(f"File upload process failed for {file.filename}")
+        logger.error(f"Error: {str(e)}")
         
-        # Log the full traceback for debugging
-        import traceback
-        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        # Log the full traceback for debugging only in verbose mode
+        if VERBOSE_MODE:
+            import traceback
+            logger.debug(f"Full traceback:\n{traceback.format_exc()}")
         
         processor.cleanup()
         raise HTTPException(status_code=500, detail=str(e))
