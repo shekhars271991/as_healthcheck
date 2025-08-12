@@ -546,36 +546,28 @@ const HealthCheckDetails = () => {
         </button>
         
         <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{health_check.customer_name}</h1>
-            <p className="text-gray-600">Multi-region health check analysis</p>
-          </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{health_check.customer_name}</h1>
+              {/* <p className="text-gray-600">Multi-region health check analysis</p> */}
+            </div>
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center p-1.5 border border-gray-300 shadow-sm rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={refreshing ? 'Refreshing...' : 'Refresh data'}
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              {refreshing ? 'Refreshing...' : 'Refresh'}
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
-                        <div className="flex items-center space-x-3">
-              <button
-                onClick={exportLicenseInfo}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export License Info
-              </button>
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-              >
-                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-                {refreshing ? 'Refreshing...' : 'Refresh'}
-              </button>
-            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={exportLicenseInfo}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export License Info
+            </button>
           </div>
         </div>
       </div>
