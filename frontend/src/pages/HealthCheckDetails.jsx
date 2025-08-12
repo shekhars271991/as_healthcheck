@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2, AlertCircle, Download, RotateCcw, MapPin } from 'lucide-react';
+import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Trash2, AlertCircle, Download, RotateCcw, MapPin } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const HealthCheckDetails = () => {
@@ -15,8 +15,6 @@ const HealthCheckDetails = () => {
   // UI state for scalability
   const [expandedRegions, setExpandedRegions] = useState({}); // Track which regions are expanded
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // all, waiting, processing, completed, failed
-  const [viewMode, setViewMode] = useState('grid'); // grid, list, compact
   const [clustersPerPage] = useState(50); // Pagination for large lists
   const [currentPage, setCurrentPage] = useState({});
   const [deletingCluster, setDeletingCluster] = useState(null); // Track which cluster is being deleted
@@ -177,18 +175,32 @@ const HealthCheckDetails = () => {
     }));
   };
 
-  const filterClusters = (clusters) => {
-    return clusters.filter(cluster => {
-      // Search filter
+  const filterAndSortClusters = (clusters) => {
+    // First filter by search term
+    const filtered = clusters.filter(cluster => {
       const matchesSearch = !searchTerm || 
         cluster.cluster_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         cluster.filename?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         cluster.data?.clusterInfo?.name?.toLowerCase().includes(searchTerm.toLowerCase());
 
-      // Status filter
-      const matchesStatus = statusFilter === 'all' || cluster.status === statusFilter;
+      return matchesSearch;
+    });
 
-      return matchesSearch && matchesStatus;
+    // Then sort by memory used (highest to lowest)
+    return filtered.sort((a, b) => {
+      const getMemoryValue = (cluster) => {
+        const memoryUsed = cluster.data?.clusterInfo?.memory?.used;
+        if (!memoryUsed || memoryUsed === 'Unknown' || memoryUsed === 'Error') return 0;
+        // Parse numeric values from strings like "30.5 GB", "1.2 TB", etc.
+        const numericValue = parseFloat(memoryUsed.replace(/[^0-9.]/g, ''));
+        // Handle different units - convert everything to GB for comparison
+        if (memoryUsed.includes('TB')) {
+          return isNaN(numericValue) ? 0 : numericValue * 1024; // TB to GB
+        }
+        return isNaN(numericValue) ? 0 : numericValue; // Already in GB
+      };
+      
+      return getMemoryValue(b) - getMemoryValue(a); // Descending order (highest first)
     });
   };
 
@@ -710,60 +722,7 @@ const HealthCheckDetails = () => {
         );
       })()}
 
-      {/* Search and Filter Controls */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center flex-1">
-            {/* Search */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search clusters..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
 
-            {/* Status Filter */}
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Status</option>
-                <option value="waiting">Waiting</option>
-                <option value="processing">Processing</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-              </select>
-            </div>
-          </div>
-
-          {/* View Mode Toggle */}
-          <div className="flex items-center gap-2 bg-gray-100 rounded-md p-1">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded text-xs font-medium transition-colors ${
-                viewMode === 'grid' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Grid className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded text-xs font-medium transition-colors ${
-                viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <List className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Upload Notifications */}
       {uploadNotifications.length > 0 && (
@@ -804,12 +763,24 @@ const HealthCheckDetails = () => {
 
       {/* Regions */}
       <div className="space-y-4">
-        <h2 className="text-xl font-bold text-gray-900">Regions</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900">Regions</h2>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search clusters..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 pr-3 py-1.5 w-64 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+        </div>
         
         {regions.map((region, index) => {
           const regionSummary = calculateRegionSummary(region);
-          const filteredClusters = filterClusters(region.clusters || []);
-          const paginatedData = paginateClusters(filteredClusters, region.region_name);
+          const filteredAndSortedClusters = filterAndSortClusters(region.clusters || []);
+          const paginatedData = paginateClusters(filteredAndSortedClusters, region.region_name);
           const isExpanded = expandedRegions[region.region_name] ?? false;
           
           return (
@@ -911,12 +882,8 @@ const HealthCheckDetails = () => {
                     </div>
                   )}
 
-                  {/* Clusters Grid/List */}
-                  <div className={
-                    viewMode === 'grid' 
-                      ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" 
-                      : "space-y-2"
-                  }>
+                  {/* Clusters Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {paginatedData.clusters.map((cluster, clusterIndex) => {
                     const clusterData = cluster.data;
                     const statusInfo = getClusterStatusInfo(cluster);
