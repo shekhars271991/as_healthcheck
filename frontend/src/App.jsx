@@ -1,13 +1,7 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import ClusterHealth from './pages/ClusterHealth.jsx';
-import Performance from './pages/Performance.jsx';
 import Configuration from './pages/Configuration.jsx';
-import SystemInfo from './pages/SystemInfo.jsx';
-import XDRStatus from './pages/XDRStatus.jsx';
-import Logs from './pages/Logs.jsx';
 import HealthCheckHistory from './pages/HealthCheckHistory.jsx';
 import CreateHealthCheck from './pages/CreateHealthCheck.jsx';
 import HealthCheckDetails from './pages/HealthCheckDetails.jsx';
@@ -24,13 +18,8 @@ function App() {
             <Route path="/health-check/create" element={<CreateHealthCheck />} />
             <Route path="/health-check/:healthCheckId" element={<HealthCheckDetails />} />
             <Route path="/health-check/:healthCheckId/cluster/:resultKey" element={<ClusterDetail />} />
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/cluster-health" element={<ClusterHealth />} />
-            <Route path="/performance" element={<Performance />} />
             <Route path="/configuration" element={<Configuration />} />
-            <Route path="/system-info" element={<SystemInfo />} />
-            <Route path="/xdr-status" element={<XDRStatus />} />
-            <Route path="/logs" element={<Logs />} />
+            <Route path="/" element={<Navigate to="/health-checks" replace />} />
           </Routes>
         </main>
       </div>

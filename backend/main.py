@@ -17,6 +17,8 @@ from pydantic import BaseModel
 import google.generativeai as genai
 from dotenv import load_dotenv
 import aerospike
+import asyncio
+import glob
 
 # Load environment variables from .env file
 load_dotenv()
@@ -994,9 +996,20 @@ Data to parse:
         except Exception as e:
             logger.error(f"Error calculating derived metrics: {e}")
 
-    def create_fallback_structure(self, combined_output: str, error_msg: str = "") -> Dict[str, Any]:
+    def create_fallback_structure(self, combined_output, error_msg: str = "") -> Dict[str, Any]:
         """Create a basic fallback structure when Gemini fails"""
         try:
+            # Handle both string and dict inputs
+            if isinstance(combined_output, dict):
+                # If it's already a dict (from asadm_results), convert to string
+                text_output = ""
+                for command, result in combined_output.items():
+                    if isinstance(result, dict) and result.get('success'):
+                        text_output += f"\n=== {command.upper()} ===\n"
+                        text_output += result.get('stdout', '')
+                        text_output += "\n"
+                combined_output = text_output
+            
             # Extract basic info from the combined output
             lines = combined_output.split('\n')
             
@@ -1869,6 +1882,156 @@ async def delete_cluster(result_key: str):
         return JSONResponse({
             "success": False,
             "message": f"Failed to delete cluster: {str(e)}"
+        }, status_code=500)
+
+@app.post("/health-checks/{health_check_id}/retry/{result_key}")
+async def retry_failed_cluster(health_check_id: str, result_key: str):
+    """Retry processing a failed cluster"""
+    try:
+        if not aerospike_client:
+            raise HTTPException(status_code=500, detail="Aerospike not connected")
+        
+        # Get the cluster record
+        cluster_key = ("healthcheck", "cluster_results", result_key)
+        _, _, cluster_data = aerospike_client.get(cluster_key)
+        
+        if not cluster_data:
+            raise HTTPException(status_code=404, detail="Cluster not found")
+        
+        # Check if cluster has errors (either failed status or error data)
+        cluster_status = cluster_data.get("status")
+        cluster_has_errors = (
+            cluster_status == "failed" or
+            cluster_data.get("data", {}).get("clusterInfo", {}).get("name") == "Error" or
+            cluster_data.get("data", {}).get("clusterInfo", {}).get("memory", {}).get("total") == "Error"
+        )
+        
+        if not cluster_has_errors:
+            raise HTTPException(status_code=400, detail="Only failed or error clusters can be retried")
+        
+        # Check if the original file still exists in temp directory
+        filename = cluster_data.get("filename", "")
+        if not filename:
+            raise HTTPException(status_code=400, detail="No filename found for cluster")
+        
+        # Update status to processing (using short field names for Aerospike)
+        cluster_data.update({
+            "status": "processing",
+            "error": None,
+            "retry_at": datetime.now().isoformat()
+        })
+        aerospike_client.put(cluster_key, cluster_data)
+        
+        logger.info(f"Starting retry for cluster {result_key} with file {filename}")
+        
+        # Create a new processor for this retry
+        retry_processor = HealthDataProcessor()
+        region_name = cluster_data.get("region_name", "")
+        
+        async def retry_processing():
+            """Retry processing in background"""
+            try:
+                # We need to find the file in some temp storage or ask user to re-upload
+                # For now, let's look for it in common temp locations
+                import glob
+                import os
+                
+                # Search for the file in various temp directories
+                possible_paths = [
+                    f"/tmp/*{filename}*",
+                    f"/var/folders/**/tmp*/*{filename}*",
+                    f"/Users/*/tmp/*{filename}*",
+                ]
+                
+                file_path = None
+                for pattern in possible_paths:
+                    matches = glob.glob(pattern, recursive=True)
+                    if matches:
+                        file_path = Path(matches[0])
+                        break
+                
+                if not file_path or not file_path.exists():
+                    # File not found, update status to show user needs to re-upload
+                    cluster_data.update({
+                        "status": "failed",
+                        "error": "Original file no longer available. Please re-upload the file.",
+                        "retry_at": datetime.now().isoformat()
+                    })
+                    aerospike_client.put(cluster_key, cluster_data)
+                    return
+                
+                logger.info(f"[RETRY-{result_key}] Found file at: {file_path}")
+                
+                # Extract if it's an archive
+                extracted_path = retry_processor.extract_collectinfo(file_path)
+                logger.info(f"[RETRY-{result_key}] Extracted to: {extracted_path}")
+                
+                # Extract real cluster name from the collectinfo
+                real_cluster_name = retry_processor.extract_cluster_name_from_collectinfo(extracted_path)
+                logger.info(f"[RETRY-{result_key}] Extracted real cluster name: {real_cluster_name}")
+                
+                # Run asadm commands
+                logger.info(f"[RETRY-{result_key}] Starting asadm commands...")
+                combined_output = await asyncio.get_event_loop().run_in_executor(
+                    None, retry_processor.run_asadm_commands, extracted_path
+                )
+                logger.info(f"[RETRY-{result_key}] Completed asadm commands")
+                
+                # Parse with Gemini
+                logger.info(f"[RETRY-{result_key}] Starting Gemini parsing...")
+                parsed_data = await asyncio.get_event_loop().run_in_executor(
+                    None, retry_processor.parse_with_gemini, combined_output
+                )
+                logger.info(f"[RETRY-{result_key}] Completed Gemini parsing")
+                
+                # Update cluster entry with new data (keeping compatibility)
+                cluster_result = {
+                    "result_key": result_key,
+                    "health_check_id": health_check_id,
+                    "region_name": region_name,
+                    "cluster_name": real_cluster_name,
+                    "filename": filename,
+                    "status": "completed",
+                    "created_at": cluster_data.get("created_at", datetime.now().isoformat()),
+                    "processed_at": datetime.now().isoformat(),
+                    "retry_at": datetime.now().isoformat(),
+                    "data": parsed_data
+                }
+                
+                aerospike_client.put(cluster_key, cluster_result)
+                logger.info(f"[RETRY-{result_key}] Successfully completed retry processing")
+                
+            except Exception as e:
+                logger.error(f"[RETRY-{result_key}] Error during retry: {e}")
+                # Update status to failed with error
+                try:
+                    cluster_data.update({
+                        "status": "failed",
+                        "error": f"Retry failed: {str(e)}",
+                        "retry_at": datetime.now().isoformat()
+                    })
+                    aerospike_client.put(cluster_key, cluster_data)
+                except Exception as update_error:
+                    logger.error(f"[RETRY-{result_key}] Failed to update error status: {update_error}")
+            
+            finally:
+                # Cleanup
+                retry_processor.cleanup()
+        
+        # Start retry processing in background
+        asyncio.create_task(retry_processing())
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"Retry started for cluster {result_key}",
+            "result_key": result_key
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting retry for cluster {result_key}: {e}")
+        return JSONResponse({
+            "success": False,
+            "message": f"Error starting retry: {str(e)}"
         }, status_code=500)
 
 if __name__ == "__main__":

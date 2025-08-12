@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2, AlertCircle, Download } from 'lucide-react';
+import { ArrowLeft, Users, Database, Activity, Calendar, Server, Loader2, CheckCircle, XCircle, RefreshCw, Clock, Upload, Plus, ChevronDown, ChevronUp, Search, Filter, Grid, List, Trash2, AlertCircle, Download, RotateCcw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const HealthCheckDetails = () => {
@@ -22,6 +22,7 @@ const HealthCheckDetails = () => {
   const [deletingCluster, setDeletingCluster] = useState(null); // Track which cluster is being deleted
   const [deleteConfirmCluster, setDeleteConfirmCluster] = useState(null); // Confirmation dialog state
   const [uploadNotifications, setUploadNotifications] = useState([]); // Track upload notifications
+  const [retryingCluster, setRetryingCluster] = useState(null); // Track which cluster is being retried
 
   useEffect(() => {
     fetchHealthCheckDetails();
@@ -350,6 +351,44 @@ const HealthCheckDetails = () => {
 
   const handleViewCluster = (resultKey) => {
     navigate(`/health-check/${healthCheckId}/cluster/${resultKey}`);
+  };
+
+  const handleRetryCluster = async (resultKey) => {
+    try {
+      setRetryingCluster(resultKey);
+      
+      const response = await fetch(`http://localhost:8000/health-checks/${healthCheckId}/retry/${resultKey}`, {
+        method: 'POST'
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Refresh data to show updated status
+        fetchHealthCheckDetails(true);
+        
+        // Show success notification
+        const successNotification = {
+          id: Date.now(),
+          type: 'success',
+          message: `Retry started for cluster`,
+          timestamp: new Date()
+        };
+        setUploadNotifications(prev => [...prev, successNotification]);
+        
+        // Auto-remove notification after 3 seconds
+        setTimeout(() => {
+          setUploadNotifications(prev => prev.filter(n => n.id !== successNotification.id));
+        }, 3000);
+      } else {
+        alert(`Failed to retry cluster: ${data.message}`);
+      }
+    } catch (error) {
+      console.error('Error retrying cluster:', error);
+      alert('Failed to retry cluster');
+    } finally {
+      setRetryingCluster(null);
+    }
   };
 
   const getClusterStatusInfo = (cluster) => {
@@ -879,14 +918,31 @@ const HealthCheckDetails = () => {
                             </p>
                           </div>
                           <div className="flex items-center space-x-2">
+                                                         {isErrorCluster && (
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   handleRetryCluster(cluster.result_key);
+                                 }}
+                                 disabled={retryingCluster === cluster.result_key || deletingCluster === cluster.result_key}
+                                 className="p-2 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200 hover:text-blue-700 transition-colors disabled:opacity-50 border border-blue-200"
+                                 title={deletingCluster === cluster.result_key ? "Cannot retry while deleting" : "Retry processing"}
+                               >
+                                 {retryingCluster === cluster.result_key ? (
+                                   <Loader2 className="h-4 w-4 animate-spin" />
+                                 ) : (
+                                   <RotateCcw className="h-4 w-4" />
+                                 )}
+                               </button>
+                             )}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 confirmDeleteCluster(cluster);
                               }}
-                              disabled={deletingCluster === cluster.result_key}
+                              disabled={deletingCluster === cluster.result_key || retryingCluster === cluster.result_key}
                               className="p-2 rounded-md bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-50 border border-gray-200"
-                              title="Delete cluster"
+                              title={retryingCluster === cluster.result_key ? "Cannot delete while retrying" : "Delete cluster"}
                             >
                               {deletingCluster === cluster.result_key ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -915,6 +971,36 @@ const HealthCheckDetails = () => {
                               <span>Unique Memory:</span>
                               <span>{uniqueMemoryUsed}</span>
                             </div>
+                            {isErrorCluster && (
+                              <div className="mt-2 pt-2 border-t border-red-200">
+                                <div className="text-red-600 font-medium text-xs mb-2">⚠️ Parsing errors detected</div>
+                                                                 <button
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     handleRetryCluster(cluster.result_key);
+                                   }}
+                                   disabled={retryingCluster === cluster.result_key || deletingCluster === cluster.result_key}
+                                   className="w-full inline-flex items-center justify-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50"
+                                 >
+                                   {retryingCluster === cluster.result_key ? (
+                                     <>
+                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                       Retrying...
+                                     </>
+                                   ) : deletingCluster === cluster.result_key ? (
+                                     <>
+                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                       Deleting...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <RotateCcw className="h-3 w-3 mr-1" />
+                                       Retry Processing
+                                     </>
+                                   )}
+                                 </button>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className={`text-xs text-center py-3 ${
@@ -928,6 +1014,31 @@ const HealthCheckDetails = () => {
                                <div>
                                  <div className="font-medium">❌ Processing Failed</div>
                                  <div className="mt-1 text-xs">{cluster.error || 'Unknown error'}</div>
+                                 <button
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     handleRetryCluster(cluster.result_key);
+                                   }}
+                                   disabled={retryingCluster === cluster.result_key || deletingCluster === cluster.result_key}
+                                   className="mt-2 inline-flex items-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50"
+                                 >
+                                   {retryingCluster === cluster.result_key ? (
+                                     <>
+                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                       Retrying...
+                                     </>
+                                   ) : deletingCluster === cluster.result_key ? (
+                                     <>
+                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                       Deleting...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <RotateCcw className="h-3 w-3 mr-1" />
+                                       Retry
+                                     </>
+                                   )}
+                                 </button>
                                </div>
                              ) :
                              'Waiting for processing'}
