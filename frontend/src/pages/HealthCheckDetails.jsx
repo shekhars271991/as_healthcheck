@@ -677,6 +677,13 @@ const HealthCheckDetails = () => {
 
   const { health_check, regions, summary } = healthCheckData;
   const overallHealth = getOverallHealthStatus(regions);
+  
+  // Sort regions by total unique data in descending order
+  const sortedRegions = [...regions].sort((a, b) => {
+    const summaryA = calculateRegionSummary(a);
+    const summaryB = calculateRegionSummary(b);
+    return summaryB.totalUniqueData - summaryA.totalUniqueData;
+  });
 
   return (
     <div className="p-6">
@@ -821,7 +828,7 @@ const HealthCheckDetails = () => {
           </div>
         </div>
         
-        {regions.map((region, index) => {
+        {sortedRegions.map((region, index) => {
           const regionSummary = calculateRegionSummary(region);
           const filteredAndSortedClusters = filterAndSortClusters(region.clusters || []);
           const paginatedData = paginateClusters(filteredAndSortedClusters, region.region_name);

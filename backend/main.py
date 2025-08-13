@@ -40,6 +40,14 @@ class HealthCheckSummary(BaseModel):
     clusters_count: int
     status: str
 
+class ConfigurationRequest(BaseModel):
+    model: str
+    api_key: Optional[str] = None
+
+class ConfigurationResponse(BaseModel):
+    model: str
+    using_default_key: bool
+
 # Check for verbose mode from environment or command line
 import sys
 VERBOSE_MODE = '--verbose' in sys.argv or '-v' in sys.argv or os.getenv('VERBOSE', '').lower() in ('true', '1')
@@ -1270,6 +1278,13 @@ Data to parse:
 # Global processor instance
 processor = HealthDataProcessor()
 
+# Configuration storage
+APP_CONFIG = {
+    "model": "gemini",
+    "custom_api_key": None,
+    "using_default_key": True
+}
+
 @app.post("/upload")
 async def upload_collectinfo(file: UploadFile = File(...)):
     """Upload and process collectinfo file"""
@@ -1340,6 +1355,52 @@ async def upload_collectinfo(file: UploadFile = File(...)):
         
         processor.cleanup()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/config")
+async def get_configuration():
+    """Get current configuration"""
+    return ConfigurationResponse(
+        model=APP_CONFIG["model"],
+        using_default_key=APP_CONFIG["using_default_key"]
+    )
+
+@app.post("/config")
+async def save_configuration(config: ConfigurationRequest):
+    """Save configuration"""
+    global APP_CONFIG, GEMINI_API_KEY
+    
+    try:
+        # Update model selection
+        APP_CONFIG["model"] = config.model
+        
+        # Handle API key
+        if config.api_key:
+            APP_CONFIG["custom_api_key"] = config.api_key
+            APP_CONFIG["using_default_key"] = False
+            
+            # Update Gemini configuration if it's the selected model
+            if config.model == "gemini":
+                GEMINI_API_KEY = config.api_key
+                genai.configure(api_key=GEMINI_API_KEY)
+                logger.info("Updated Gemini API key from configuration")
+        else:
+            APP_CONFIG["using_default_key"] = True
+            
+            # Revert to default key if available
+            if config.model == "gemini":
+                default_key = os.getenv('GEMINI_API_KEY')
+                if default_key and default_key != 'your_gemini_api_key_here':
+                    GEMINI_API_KEY = default_key
+                    genai.configure(api_key=GEMINI_API_KEY)
+                    logger.info("Reverted to default Gemini API key")
+        
+        logger.info(f"Configuration updated: model={config.model}, using_default_key={APP_CONFIG['using_default_key']}")
+        
+        return {"success": True, "message": "Configuration saved successfully"}
+        
+    except Exception as e:
+        logger.error(f"Failed to save configuration: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save configuration")
 
 @app.get("/health")
 async def health_check():

@@ -20,7 +20,7 @@ const Dashboard = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [healthData, setHealthData] = useState(null);
   const [error, setError] = useState(null);
-  const [nodesCollapsed, setNodesCollapsed] = useState(false);
+  const [nodesCollapsed, setNodesCollapsed] = useState(true);
 
   // Load data from localStorage on component mount
   useEffect(() => {
@@ -381,6 +381,14 @@ const Dashboard = () => {
 
   const ClusterOverview = () => {
     const [expandedNamespaces, setExpandedNamespaces] = useState(new Set());
+
+    // Expand all namespaces by default when healthData is available
+    React.useEffect(() => {
+      if (healthData?.namespaces) {
+        const allNamespaceNames = new Set(healthData.namespaces.map(ns => ns.name));
+        setExpandedNamespaces(allNamespaceNames);
+      }
+    }, [healthData?.namespaces]);
 
     const toggleNamespace = (namespaceName) => {
       const newExpanded = new Set(expandedNamespaces);

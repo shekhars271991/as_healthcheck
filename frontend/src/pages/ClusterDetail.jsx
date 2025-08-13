@@ -9,11 +9,19 @@ const ClusterDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedNamespaces, setExpandedNamespaces] = useState(new Set());
-  const [nodesCollapsed, setNodesCollapsed] = useState(false);
+  const [nodesCollapsed, setNodesCollapsed] = useState(true);
 
   useEffect(() => {
     fetchClusterDetails();
   }, [healthCheckId, resultKey]);
+
+  // Expand all namespaces by default when cluster data is available
+  useEffect(() => {
+    if (clusterData?.data?.namespaces) {
+      const allNamespaceNames = new Set(clusterData.data.namespaces.map(ns => ns.name));
+      setExpandedNamespaces(allNamespaceNames);
+    }
+  }, [clusterData?.data?.namespaces]);
 
   // Sum of unique data across namespaces (expects values like "12.34 GB")
   const totalUniqueData = useMemo(() => {
