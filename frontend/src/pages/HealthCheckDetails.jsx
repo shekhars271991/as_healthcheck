@@ -953,6 +953,10 @@ const HealthCheckDetails = () => {
                       return total + uniqueData;
                     }, 0).toFixed(2) + ' GB' || 'N/A';
                     
+                    // Extract license usage information
+                    const licenseUsage = clusterData?.clusterInfo?.license?.usage || 'N/A';
+                    const licenseUsagePercent = clusterData?.clusterInfo?.license?.usagePercent || 'N/A';
+                    
                     return (
                       <div 
                         key={clusterIndex} 
@@ -1056,6 +1060,10 @@ const HealthCheckDetails = () => {
                             <div className="flex justify-between">
                               <span>Unique Memory:</span>
                               <span>{uniqueMemoryUsed}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>License Usage:</span>
+                              <span>{licenseUsage}</span>
                             </div>
                                                         {isErrorCluster && (
                               <div className="mt-2 pt-2 border-t border-red-200">
