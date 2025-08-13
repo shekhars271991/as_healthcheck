@@ -15,6 +15,7 @@ const HealthCheckDetails = () => {
   // UI state for scalability
   const [expandedRegions, setExpandedRegions] = useState({}); // Track which regions are expanded
   const [searchTerm, setSearchTerm] = useState('');
+  const [hideZeroUniqueData, setHideZeroUniqueData] = useState(false); // Hide clusters with 0 unique data
   const [clustersPerPage] = useState(50); // Pagination for large lists
   const [currentPage, setCurrentPage] = useState({});
   const [deletingCluster, setDeletingCluster] = useState(null); // Track which cluster is being deleted
@@ -175,15 +176,44 @@ const HealthCheckDetails = () => {
     }));
   };
 
+  // Helper function to calculate unique data sum for a cluster
+  const getUniqueDataSum = (cluster) => {
+    try {
+      const namespaces = cluster.data?.namespaces || [];
+      let sum = 0;
+      namespaces.forEach((ns) => {
+        const val = ns?.clientWrites?.uniqueData;
+        if (val !== undefined && val !== null) {
+          if (typeof val === 'number') {
+            sum += val; // assume GB
+          } else if (typeof val === 'string') {
+            const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
+            if (!isNaN(num)) sum += num;
+          }
+        }
+      });
+      return sum;
+    } catch {
+      return 0;
+    }
+  };
+
   const filterAndSortClusters = (clusters) => {
-    // First filter by search term
+    // First filter by search term and unique data
     const filtered = clusters.filter(cluster => {
       const matchesSearch = !searchTerm || 
         cluster.cluster_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         cluster.filename?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         cluster.data?.clusterInfo?.name?.toLowerCase().includes(searchTerm.toLowerCase());
 
-      return matchesSearch;
+      // Check unique data filter
+      let matchesUniqueDataFilter = true;
+      if (hideZeroUniqueData) {
+        const uniqueData = getUniqueDataSum(cluster);
+        matchesUniqueDataFilter = uniqueData > 0;
+      }
+
+      return matchesSearch && matchesUniqueDataFilter;
     });
 
     // Then sort by memory used (highest to lowest)
@@ -765,15 +795,29 @@ const HealthCheckDetails = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-gray-900">Regions</h2>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search clusters..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-3 py-1.5 w-64 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-            />
+          <div className="flex items-center space-x-4">
+            {/* Filter Toggle */}
+            <label className="flex items-center space-x-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={hideZeroUniqueData}
+                onChange={(e) => setHideZeroUniqueData(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>Hide 0 unique data clusters</span>
+            </label>
+            
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search clusters..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 pr-3 py-1.5 w-64 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
           </div>
         </div>
         

@@ -195,7 +195,7 @@ const ClusterDetail = () => {
             
             <div className="space-y-2">
               <div className="text-sm font-medium text-gray-500">License Usage</div>
-              <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.license?.usage || 'N/A'} ({healthData.clusterInfo?.license?.usagePercent || 'N/A'})</div>
+              <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.license?.usage || 'N/A'} </div>
             </div>
             
             <div className="space-y-2">
@@ -325,7 +325,7 @@ const ClusterDetail = () => {
                         <div className="space-y-1">
                           <div className="text-xs font-medium text-gray-500">License Usage</div>
                           <div className="text-sm text-gray-900 font-mono">
-                            {ns?.license?.usage || 'N/A'} ({ns?.license?.usagePercent || 'N/A'})
+                            {ns?.license?.usage || 'N/A'}
                           </div>
                         </div>
                         
