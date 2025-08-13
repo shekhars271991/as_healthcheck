@@ -6,6 +6,7 @@ import HealthCheckHistory from './pages/HealthCheckHistory.jsx';
 import CreateHealthCheck from './pages/CreateHealthCheck.jsx';
 import HealthCheckDetails from './pages/HealthCheckDetails.jsx';
 import ClusterDetail from './pages/ClusterDetail.jsx';
+import XDRView from './pages/XDRView.jsx';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
             <Route path="/health-checks" element={<HealthCheckHistory />} />
             <Route path="/health-check/create" element={<CreateHealthCheck />} />
             <Route path="/health-check/:healthCheckId" element={<HealthCheckDetails />} />
+            <Route path="/health-check/:healthCheckId/xdr" element={<XDRView />} />
             <Route path="/health-check/:healthCheckId/cluster/:resultKey" element={<ClusterDetail />} />
             <Route path="/configuration" element={<Configuration />} />
             <Route path="/" element={<Navigate to="/health-checks" replace />} />

@@ -247,6 +247,44 @@ const HealthCheckDetails = () => {
     }
   };
 
+  const parseNumeric = (v) => {
+    if (v === undefined || v === null) return NaN;
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') {
+      const num = parseFloat(v.replace(/[^0-9.]/g, ''));
+      return isNaN(num) ? NaN : num;
+    }
+    return NaN;
+  };
+
+  // Determine XDR mode for a namespace: 'AP' (active-passive), 'AA' (active-active), or null
+  const getNamespaceXdrMode = (ns) => {
+    const cws = parseNumeric(ns?.clientWrites?.clientWriteSuccess || ns?.clientWrites?.success);
+    const xws = parseNumeric(ns?.clientWrites?.xdrClientWriteSuccess);
+    if (isNaN(cws) || isNaN(xws) || xws <= 0) return null;
+    // Compare variance relative to client writes; avoid divide by zero
+    const base = cws === 0 ? (xws === 0 ? 1 : xws) : cws;
+    const variance = Math.abs(xws - cws) / base;
+    return variance <= 0.05 ? 'AP' : 'AA';
+  };
+
+  // Determine cluster-level XDR mode from its namespaces
+  const getClusterXdrMode = (cluster) => {
+    const namespaces = cluster?.data?.namespaces || [];
+    let hasAny = false;
+    let anyAA = false;
+    let anyAP = false;
+    namespaces.forEach((ns) => {
+      const mode = getNamespaceXdrMode(ns);
+      if (mode) {
+        hasAny = true;
+        if (mode === 'AA') anyAA = true; else anyAP = true;
+      }
+    });
+    if (!hasAny) return null;
+    return anyAA ? 'AA' : 'AP';
+  };
+
   const filterAndSortClusters = (clusters) => {
     // First filter by search term, unique data, and status
     const filtered = clusters.filter(cluster => {
@@ -896,6 +934,13 @@ const HealthCheckDetails = () => {
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-gray-900">Regions</h2>
           <div className="flex items-center space-x-4">
+            {/* XDR View Button */}
+            <button
+              onClick={() => navigate(`/health-check/${healthCheckId}/xdr`)}
+              className="inline-flex items-center px-3 py-1.5 border border-cyan-300 shadow-sm text-sm leading-4 font-medium rounded-md text-cyan-700 bg-white hover:bg-cyan-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
+            >
+              XDR View
+            </button>
             {/* Status Filter */}
             <div className="flex items-center space-x-2">
               <label className="text-sm text-gray-600">Status:</label>
@@ -1102,6 +1147,7 @@ const HealthCheckDetails = () => {
                     const needsManualReview = hasInvalidClientWrites(cluster);
                     const invalidNamespaces = getInvalidNamespaces(cluster);
                     const hasXdr = hasXdrWrites(cluster);
+                    const xdrMode = getClusterXdrMode(cluster); // 'AA' | 'AP' | null
                     
                     return (
                       <div 
@@ -1125,8 +1171,8 @@ const HealthCheckDetails = () => {
                                 {realClusterName}
                               </h5>
                               {!isErrorCluster && hasXdr && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-100 text-cyan-800 border border-cyan-200" title="XDR activity detected">
-                                  XDR
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${xdrMode === 'AA' ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-cyan-100 text-cyan-800 border-cyan-200'}`} title={`XDR activity detected • ${xdrMode === 'AA' ? 'Active-Active' : 'Active-Passive'}`}>
+                                  XDR{xdrMode ? ` • ${xdrMode}` : ''}
                                 </span>
                               )}
                               {/* Status Dot */}

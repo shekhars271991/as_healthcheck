@@ -65,6 +65,45 @@ const ClusterDetail = () => {
     }
   }, [clusterData?.data?.namespaces]);
 
+  const parseNumeric = (v) => {
+    if (v === undefined || v === null) return NaN;
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') {
+      const num = parseFloat(v.replace(/[^0-9.]/g, ''));
+      return isNaN(num) ? NaN : num;
+    }
+    return NaN;
+  };
+
+  const getNamespaceXdrMode = (ns) => {
+    const cws = parseNumeric(ns?.clientWrites?.clientWriteSuccess || ns?.clientWrites?.success);
+    const xws = parseNumeric(ns?.clientWrites?.xdrClientWriteSuccess);
+    if (isNaN(cws) || isNaN(xws) || xws <= 0) return null;
+    const base = cws === 0 ? (xws === 0 ? 1 : xws) : cws;
+    const variance = Math.abs(xws - cws) / base;
+    return variance <= 0.05 ? 'AP' : 'AA';
+  };
+
+  const clusterXdrMode = useMemo(() => {
+    try {
+      const namespaces = clusterData?.data?.namespaces || [];
+      let hasAny = false;
+      let anyAA = false;
+      let anyAP = false;
+      namespaces.forEach((ns) => {
+        const mode = getNamespaceXdrMode(ns);
+        if (mode) {
+          hasAny = true;
+          if (mode === 'AA') anyAA = true; else anyAP = true;
+        }
+      });
+      if (!hasAny) return null;
+      return anyAA ? 'AA' : 'AP';
+    } catch {
+      return null;
+    }
+  }, [clusterData?.data?.namespaces]);
+
   const fetchClusterDetails = async () => {
     try {
       setLoading(true);
@@ -162,8 +201,8 @@ const ClusterDetail = () => {
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               {clusterData.data?.clusterInfo?.name || clusterData.cluster_name}
               {hasXdrCluster && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-100 text-cyan-800 border border-cyan-200">
-                  XDR
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${clusterXdrMode === 'AA' ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-cyan-100 text-cyan-800 border-cyan-200'}`}>
+                  XDR{clusterXdrMode ? ` • ${clusterXdrMode}` : ''}
                 </span>
               )}
             </h1>
@@ -315,23 +354,13 @@ const ClusterDetail = () => {
                       <h4 className="text-md font-semibold text-gray-900 font-mono flex items-center gap-2">
                         {ns.name}
                         {(() => {
-                          const v = ns?.clientWrites?.xdrClientWriteSuccess;
-                          let isXdr = false;
-                          if (v !== undefined && v !== null) {
-                            if (typeof v === 'number') isXdr = v > 0;
-                            else if (typeof v === 'string') {
-                              const t = v.trim();
-                              if (t && t.toLowerCase() !== 'n/a' && t.toLowerCase() !== 'unknown') {
-                                const num = parseFloat(t.replace(/[^0-9.]/g, ''));
-                                isXdr = !isNaN(num) && num > 0;
-                              }
-                            }
-                          }
-                          return isXdr ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-100 text-cyan-800 border border-cyan-200" title="XDR client writes detected">
-                              XDR
+                          const mode = getNamespaceXdrMode(ns); // 'AA' | 'AP' | null
+                          if (!mode) return null;
+                          return (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${mode === 'AA' ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-cyan-100 text-cyan-800 border-cyan-200'}`} title={`XDR ${mode === 'AA' ? 'Active-Active' : 'Active-Passive'}`}>
+                              XDR • {mode}
                             </span>
-                          ) : null;
+                          );
                         })()}
                       </h4>
                       <div className="flex items-center space-x-2">
