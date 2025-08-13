@@ -30,6 +30,7 @@ const XDRView = () => {
   const [activeTab, setActiveTab] = useState('xdr'); // 'xdr' | 'standalone'
   const [sortKey, setSortKey] = useState('name'); // 'name' | 'cluster' | 'overall' | `region:${name}`
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
+  const [hideSmall, setHideSmall] = useState(true); // hide namespaces with overall < 1 GB
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -161,6 +162,15 @@ const XDRView = () => {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">XDR View</h1>
         <div className="flex items-center space-x-3">
+          <label className="flex items-center space-x-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={hideSmall}
+              onChange={(e)=>setHideSmall(e.target.checked)}
+              className="rounded border-gray-300 text-gray-700 focus:ring-gray-500"
+            />
+            <span>Hide &lt; 1 GB</span>
+          </label>
           <label className="text-sm text-gray-600">Replication:</label>
           <select
             value={replicationFilter}
@@ -225,6 +235,7 @@ const XDRView = () => {
             {rows
               .filter(r=>r.hasXdr)
               .filter(r=> replicationFilter==='all' ? true : r.replication === replicationFilter)
+              .filter(r=> !hideSmall || (r.overallLicenseNum || 0) >= 1)
               .sort((a,b)=>{
                 let cmp = 0;
                 if (sortKey==='name') cmp = a.name.localeCompare(b.name);
@@ -271,6 +282,7 @@ const XDRView = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {rows
               .filter(r=>!r.hasXdr)
+              .filter(r=> !hideSmall || (r.sumLicense || 0) >= 1)
               .sort((a,b)=>{
                 let cmp = 0;
                 if (sortKey==='name') cmp = a.name.localeCompare(b.name);
