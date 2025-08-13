@@ -596,12 +596,12 @@ const Dashboard = () => {
                           </div> */}
                         </div>
                         
-                        <div className="space-y-1">
+                        {/* <div className="space-y-1">
                           <div className="text-xs font-medium text-gray-500">Unique Data</div>
                           <div className="text-sm text-gray-900 font-mono">
                             {ns?.clientWrites?.uniqueData || 'N/A'}
                           </div>
-                        </div>
+                        </div> */}
                       </div>
                     </div>
                   )}

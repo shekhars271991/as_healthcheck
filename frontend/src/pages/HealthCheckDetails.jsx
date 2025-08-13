@@ -956,7 +956,7 @@ const HealthCheckDetails = () => {
               </select>
             </div>
 
-            {/* Filter Toggle */}
+            {/* Filter Toggle
             <label className="flex items-center space-x-2 text-sm text-gray-600">
               <input
                 type="checkbox"
@@ -965,7 +965,7 @@ const HealthCheckDetails = () => {
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span>Hide 0 unique data clusters</span>
-            </label>
+            </label> */}
 
             {/* Manual Review */}
             <label className="flex items-center space-x-2 text-sm text-gray-600">
@@ -1027,7 +1027,7 @@ const HealthCheckDetails = () => {
                     <span>{regionSummary.totalClusters} clusters</span>
                     <span>{regionSummary.totalNamespaces} namespaces</span>
                     <span>{regionSummary.totalUsedMemory} GB used memory</span>
-                    <span>{regionSummary.totalUniqueData} GB unique data</span>
+                    {/* <span>{regionSummary.totalUniqueData} GB unique data</span> */}
                     <span>{regionSummary.totalLicenseUsage} GB license usage</span>
                     
                     {/* Status breakdown */}
@@ -1263,10 +1263,10 @@ const HealthCheckDetails = () => {
                               <span>Namespaces:</span>
                               <span>{namespaceCount}</span>
                             </div>
-                            <div className="flex justify-between">
+                            {/* <div className="flex justify-between">
                               <span>Unique Memory:</span>
                               <span>{uniqueMemoryUsed}</span>
-                            </div>
+                            </div> */}
                             <div className="flex justify-between">
                               <span>License Usage:</span>
                               <span>{licenseUsage}</span>
