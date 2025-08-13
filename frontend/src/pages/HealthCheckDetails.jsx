@@ -16,6 +16,7 @@ const HealthCheckDetails = () => {
   const [expandedRegions, setExpandedRegions] = useState({}); // Track which regions are expanded
   const [searchTerm, setSearchTerm] = useState('');
   const [hideZeroUniqueData, setHideZeroUniqueData] = useState(false); // Hide clusters with 0 unique data
+  const [statusFilter, setStatusFilter] = useState('all'); // Status filter: all, processing, completed, failed
   const [clustersPerPage] = useState(50); // Pagination for large lists
   const [currentPage, setCurrentPage] = useState({});
   const [deletingCluster, setDeletingCluster] = useState(null); // Track which cluster is being deleted
@@ -199,7 +200,7 @@ const HealthCheckDetails = () => {
   };
 
   const filterAndSortClusters = (clusters) => {
-    // First filter by search term and unique data
+    // First filter by search term, unique data, and status
     const filtered = clusters.filter(cluster => {
       const matchesSearch = !searchTerm || 
         cluster.cluster_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -213,7 +214,13 @@ const HealthCheckDetails = () => {
         matchesUniqueDataFilter = uniqueData > 0;
       }
 
-      return matchesSearch && matchesUniqueDataFilter;
+      // Check status filter
+      let matchesStatusFilter = true;
+      if (statusFilter !== 'all') {
+        matchesStatusFilter = cluster.status === statusFilter;
+      }
+
+      return matchesSearch && matchesUniqueDataFilter && matchesStatusFilter;
     });
 
     // Then sort by memory used (highest to lowest)
@@ -263,7 +270,7 @@ const HealthCheckDetails = () => {
       if (response.ok) {
         // Refresh the health check data to reflect the deletion
         await fetchHealthCheckDetails(false);
-        alert(`Cluster "${clusterName}" deleted successfully`);
+        // alert(`Cluster "${clusterName}" deleted successfully`);
       } else {
         const errorData = await response.json().catch(() => ({}));
         alert(`Failed to delete cluster: ${errorData.message || errorData.error || 'Unknown error'}`);
@@ -803,6 +810,22 @@ const HealthCheckDetails = () => {
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-gray-900">Regions</h2>
           <div className="flex items-center space-x-4">
+            {/* Status Filter */}
+            <div className="flex items-center space-x-2">
+              <label className="text-sm text-gray-600">Status:</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="border border-gray-300 rounded-md text-sm px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">All</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+                <option value="partial">Partial</option>
+              </select>
+            </div>
+
             {/* Filter Toggle */}
             <label className="flex items-center space-x-2 text-sm text-gray-600">
               <input
