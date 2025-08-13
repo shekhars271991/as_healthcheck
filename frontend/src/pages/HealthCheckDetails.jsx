@@ -225,6 +225,26 @@ const HealthCheckDetails = () => {
     return invalidNamespaces.length > 0;
   };
 
+  const hasXdrWrites = (cluster) => {
+    try {
+      const namespaces = cluster?.data?.namespaces || [];
+      return namespaces.some((ns) => {
+        const v = ns?.clientWrites?.xdrClientWriteSuccess;
+        if (v === undefined || v === null) return false;
+        if (typeof v === 'number') return v > 0;
+        if (typeof v === 'string') {
+          const trimmed = v.trim();
+          if (!trimmed || trimmed.toLowerCase() === 'n/a' || trimmed.toLowerCase() === 'unknown') return false;
+          const num = parseFloat(trimmed.replace(/[^0-9.]/g, ''));
+          return !isNaN(num) && num > 0;
+        }
+        return false;
+      });
+    } catch {
+      return false;
+    }
+  };
+
   const filterAndSortClusters = (clusters) => {
     // First filter by search term, unique data, and status
     const filtered = clusters.filter(cluster => {
@@ -1045,6 +1065,7 @@ const HealthCheckDetails = () => {
                     // Check for invalid client writes that need manual review
                     const needsManualReview = hasInvalidClientWrites(cluster);
                     const invalidNamespaces = getInvalidNamespaces(cluster);
+                    const hasXdr = hasXdrWrites(cluster);
                     
                     return (
                       <div 
@@ -1067,6 +1088,11 @@ const HealthCheckDetails = () => {
                               }`}>
                                 {realClusterName}
                               </h5>
+                              {!isErrorCluster && hasXdr && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-100 text-cyan-800 border border-cyan-200" title="XDR activity detected">
+                                  XDR
+                                </span>
+                              )}
                               {/* Status Dot */}
                               <div className="flex items-center">
                                 {isErrorCluster ? (
@@ -1088,6 +1114,7 @@ const HealthCheckDetails = () => {
                                     {cluster.status === 'waiting' && (
                                       <div className="w-2 h-2 bg-yellow-500 rounded-full" title="Waiting"></div>
                                     )}
+                                    {/* XDR badge rendered next to cluster name above */}
                                   </>
                                 )}
                               </div>

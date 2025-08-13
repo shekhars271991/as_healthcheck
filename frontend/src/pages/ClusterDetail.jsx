@@ -45,6 +45,26 @@ const ClusterDetail = () => {
     }
   }, [clusterData?.data?.namespaces]);
 
+  const hasXdrCluster = useMemo(() => {
+    try {
+      const namespaces = clusterData?.data?.namespaces || [];
+      return namespaces.some((ns) => {
+        const v = ns?.clientWrites?.xdrClientWriteSuccess;
+        if (v === undefined || v === null) return false;
+        if (typeof v === 'number') return v > 0;
+        if (typeof v === 'string') {
+          const t = v.trim();
+          if (!t || t.toLowerCase() === 'n/a' || t.toLowerCase() === 'unknown') return false;
+          const num = parseFloat(t.replace(/[^0-9.]/g, ''));
+          return !isNaN(num) && num > 0;
+        }
+        return false;
+      });
+    } catch {
+      return false;
+    }
+  }, [clusterData?.data?.namespaces]);
+
   const fetchClusterDetails = async () => {
     try {
       setLoading(true);
@@ -139,8 +159,13 @@ const ClusterDetail = () => {
         
         <div className="flex justify-between items-start">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               {clusterData.data?.clusterInfo?.name || clusterData.cluster_name}
+              {hasXdrCluster && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-100 text-cyan-800 border border-cyan-200">
+                  XDR
+                </span>
+              )}
             </h1>
             <p className="text-gray-600">
               {clusterData.region_name} • {clusterData.filename} • 
@@ -287,7 +312,28 @@ const ClusterDetail = () => {
                       ) : (
                         <ChevronRight className="h-4 w-4 text-gray-500" />
                       )}
-                      <h4 className="text-md font-semibold text-gray-900 font-mono">{ns.name}</h4>
+                      <h4 className="text-md font-semibold text-gray-900 font-mono flex items-center gap-2">
+                        {ns.name}
+                        {(() => {
+                          const v = ns?.clientWrites?.xdrClientWriteSuccess;
+                          let isXdr = false;
+                          if (v !== undefined && v !== null) {
+                            if (typeof v === 'number') isXdr = v > 0;
+                            else if (typeof v === 'string') {
+                              const t = v.trim();
+                              if (t && t.toLowerCase() !== 'n/a' && t.toLowerCase() !== 'unknown') {
+                                const num = parseFloat(t.replace(/[^0-9.]/g, ''));
+                                isXdr = !isNaN(num) && num > 0;
+                              }
+                            }
+                          }
+                          return isXdr ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-100 text-cyan-800 border border-cyan-200" title="XDR client writes detected">
+                              XDR
+                            </span>
+                          ) : null;
+                        })()}
+                      </h4>
                       <div className="flex items-center space-x-2">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                           RF: {ns.replicationFactor}
