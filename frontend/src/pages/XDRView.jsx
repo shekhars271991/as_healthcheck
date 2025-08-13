@@ -27,6 +27,7 @@ const XDRView = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [replicationFilter, setReplicationFilter] = useState('all'); // all | AP | AA
+  const [activeTab, setActiveTab] = useState('xdr'); // 'xdr' | 'standalone'
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -118,11 +119,31 @@ const XDRView = () => {
         hasXdr: e.hasXdr,
         replication,
         overallLicense: overallLic > 0 ? `${overallLic.toFixed(2)} GB` : 'N/A',
+        sumLicense: Object.values(e.perRegion)
+          .map((b) => (b && typeof b.license === 'number' ? b.license : 0))
+          .reduce((a, b) => a + b, 0),
       };
     }).sort((a,b)=> a.name.localeCompare(b.name));
 
     return { rows, topRegions };
   }, [data?.regions]);
+
+  const totals = useMemo(() => {
+    const xdrRows = rows.filter(r => r.hasXdr);
+    const standaloneRows = rows.filter(r => !r.hasXdr);
+    const xdrTotal = xdrRows.reduce((a, r) => {
+      // overallLicense is a string like "123.45 GB"
+      const n = parseNumeric(String(r.overallLicense).replace(/GB|\s/g, ''));
+      return a + (isNaN(n) ? 0 : n);
+    }, 0);
+    const standaloneTotal = standaloneRows.reduce((a, r) => a + (r.sumLicense || 0), 0);
+    const grandTotal = xdrTotal + standaloneTotal;
+    return {
+      xdrTotal: xdrTotal > 0 ? `${xdrTotal.toFixed(2)} GB` : 'N/A',
+      standaloneTotal: standaloneTotal > 0 ? `${standaloneTotal.toFixed(2)} GB` : 'N/A',
+      grandTotal: grandTotal > 0 ? `${grandTotal.toFixed(2)} GB` : 'N/A',
+    };
+  }, [rows]);
 
   if (loading) return <div className="p-6 text-sm text-gray-500">Loading XDR view...</div>;
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
@@ -145,7 +166,40 @@ const XDRView = () => {
           </select>
         </div>
       </div>
+
+      {/* Totals at top */}
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="card text-center">
+          <div className="text-sm text-gray-600">Total Overall (XDR Namespaces)</div>
+          <div className="text-xl font-semibold text-cyan-700">{totals.xdrTotal}</div>
+        </div>
+        <div className="card text-center">
+          <div className="text-sm text-gray-600">Total Overall (Standalone Namespaces)</div>
+          <div className="text-xl font-semibold text-gray-700">{totals.standaloneTotal}</div>
+        </div>
+        <div className="card text-center">
+          <div className="text-sm text-gray-600">Grand Total</div>
+          <div className="text-xl font-semibold text-indigo-700">{totals.grandTotal}</div>
+        </div>
+      </div>
       {/* XDR namespaces table */}
+      {/* Tabs */}
+      <div className="flex items-center space-x-2 mb-3">
+        <button
+          onClick={()=>setActiveTab('xdr')}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium border ${activeTab==='xdr' ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-cyan-700 border-cyan-300 hover:bg-cyan-50'}`}
+        >
+          XDR Namespaces
+        </button>
+        <button
+          onClick={()=>setActiveTab('standalone')}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium border ${activeTab==='standalone' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+        >
+          Standalone Namespaces
+        </button>
+      </div>
+
+      {activeTab==='xdr' && (
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden mb-8">
         <div className="px-6 py-3 border-b bg-gray-50 text-sm font-semibold text-gray-700">XDR Namespaces</div>
         <table className="min-w-full divide-y divide-gray-200">
@@ -180,8 +234,9 @@ const XDRView = () => {
           </tbody>
         </table>
       </div>
+      )}
 
-      {/* Standalone namespaces table */}
+      {activeTab==='standalone' && (
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-3 border-b bg-gray-50 text-sm font-semibold text-gray-700">Standalone Namespaces (no XDR)</div>
         <table className="min-w-full divide-y divide-gray-200">
@@ -192,6 +247,7 @@ const XDRView = () => {
               {topRegions.map((r) => (
                 <th key={r} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">License Usage in {r}</th>
               ))}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Overall License Usage</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -202,11 +258,14 @@ const XDRView = () => {
                 {topRegions.map((r) => (
                   <td key={r} className="px-6 py-3 text-sm text-gray-900 font-mono">{row.regionCells[r]}</td>
                 ))}
+                <td className="px-6 py-3 text-sm text-gray-900 font-mono">{row.sumLicense > 0 ? `${row.sumLicense.toFixed(2)} GB` : 'N/A'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      )}
+
     </div>
   );
 };
