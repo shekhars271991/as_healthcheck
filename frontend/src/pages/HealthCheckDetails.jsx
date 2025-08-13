@@ -855,32 +855,32 @@ const HealthCheckDetails = () => {
       {(() => {
         const overallSummary = calculateOverallSummary();
         return (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 xl:grid-cols-7 gap-4 mb-8">
-            <div className="card text-center">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+            <div className="card text-center col-span-2 md:col-span-1">
               <div className="text-2xl font-bold text-blue-600">{summary.total_regions}</div>
               <div className="text-sm text-gray-600">Regions</div>
             </div>
-            <div className="card text-center">
+            <div className="card text-center col-span-2 md:col-span-1">
               <div className="text-2xl font-bold text-green-600">{overallSummary.totalClusters}</div>
               <div className="text-sm text-gray-600">Clusters</div>
             </div>
-            <div className="card text-center">
+            <div className="card text-center col-span-2 md:col-span-1">
               <div className="text-2xl font-bold text-orange-600">{overallSummary.totalNamespaces}</div>
               <div className="text-sm text-gray-600">Namespaces</div>
             </div>
-            <div className="card text-center">
+            {/* <div className="card text-center">
               <div className="text-2xl font-bold text-purple-600">{overallSummary.totalUsedMemory} GB</div>
               <div className="text-sm text-gray-600">Used Memory</div>
-            </div>
-            <div className="card text-center">
+            </div> */}
+            {/* <div className="card text-center">
               <div className="text-2xl font-bold text-indigo-600">{overallSummary.totalUniqueData} GB</div>
               <div className="text-sm text-gray-600">Unique Data</div>
-            </div>
-            <div className="card text-center">
+            </div> */}
+            <div className="card text-center col-span-2 md:col-span-1">
               <div className="text-2xl font-bold text-teal-600">{overallSummary.totalLicenseUsage} GB</div>
               <div className="text-sm text-gray-600">License Usage</div>
             </div>
-            <div className="card text-center">
+            <div className="card text-center col-span-2 md:col-span-1">
               <div className="text-sm text-gray-600 mb-1">Created</div>
               <div className="text-sm font-medium text-gray-900">
                 {formatDate(health_check.created_at)}
@@ -1155,8 +1155,6 @@ const HealthCheckDetails = () => {
                         className={`border-2 rounded-lg p-4 transition-colors ${
                           isErrorCluster
                             ? 'border-red-300 bg-red-50 hover:bg-red-100 shadow-sm' 
-                            : needsManualReview
-                            ? 'border-orange-300 bg-orange-50 hover:bg-orange-100 shadow-sm'
                             : 'border-gray-200 bg-white hover:bg-gray-50'
                         } ${statusInfo.canView ? 'cursor-pointer' : 'cursor-default'}`}
                         onClick={() => statusInfo.canView && handleViewCluster(cluster.result_key)}
@@ -1165,8 +1163,7 @@ const HealthCheckDetails = () => {
                           <div className="flex-1">
                             <div className="flex items-center space-x-2">
                               <h5 className={`font-medium ${
-                                isErrorCluster ? 'text-red-700' : 
-                                needsManualReview ? 'text-orange-700' : 'text-gray-900'
+                                isErrorCluster ? 'text-red-700' : 'text-gray-900'
                               }`}>
                                 {realClusterName}
                               </h5>
@@ -1202,8 +1199,7 @@ const HealthCheckDetails = () => {
                               </div>
                             </div>
                             <p className={`text-xs ${
-                              isErrorCluster ? 'text-red-600' : 
-                              needsManualReview ? 'text-orange-600' : 'text-gray-500'
+                              isErrorCluster ? 'text-red-600' : 'text-gray-500'
                             }`}>
                               {cluster.filename}
                             </p>
@@ -1272,14 +1268,8 @@ const HealthCheckDetails = () => {
                               <span>{licenseUsage}</span>
                             </div>
                             {needsManualReview && (
-                              <div className="text-orange-600 font-medium">
-                                <div className="flex justify-between">
-                                  <span>⚠️ Manual Review:</span>
-                                  <span>Required</span>
-                                </div>
-                                <div className="text-xs text-orange-500 mt-1">
-                                  {invalidNamespaces.length} namespace{invalidNamespaces.length > 1 ? 's' : ''} with invalid client writes
-                                </div>
+                              <div className="mt-2 text-xs text-gray-600">
+                                {invalidNamespaces.length} namespace{invalidNamespaces.length > 1 ? 's' : ''} with invalid client writes
                               </div>
                             )}
                                                         {isErrorCluster && (
