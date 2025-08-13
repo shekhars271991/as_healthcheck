@@ -199,6 +199,32 @@ const HealthCheckDetails = () => {
     }
   };
 
+  const getInvalidNamespaces = (cluster) => {
+    if (!cluster.data?.namespaces) return [];
+    
+    return cluster.data.namespaces.filter(ns => {
+      // Check if client write success is N/A or missing
+      const clientWrites = ns.clientWrites;
+      if (!clientWrites) return true;
+      
+      // Check various client write fields for N/A or invalid values
+      const clientWriteSuccess = clientWrites.success || clientWrites.clientWriteSuccess;
+      const uniqueData = clientWrites.uniqueData;
+      
+      return !clientWriteSuccess || 
+             clientWriteSuccess === 'N/A' || 
+             clientWriteSuccess === 'Unknown' || 
+             !uniqueData || 
+             uniqueData === 'N/A' || 
+             uniqueData === '0 B';
+    });
+  };
+
+  const hasInvalidClientWrites = (cluster) => {
+    const invalidNamespaces = getInvalidNamespaces(cluster);
+    return invalidNamespaces.length > 0;
+  };
+
   const filterAndSortClusters = (clusters) => {
     // First filter by search term, unique data, and status
     const filtered = clusters.filter(cluster => {
@@ -564,6 +590,7 @@ const HealthCheckDetails = () => {
     const clusters = region.clusters || [];
     let totalUsedMemory = 0;
     let totalUniqueData = 0;
+    let totalLicenseUsage = 0;
     let totalNamespaces = 0;
     let healthIssues = 0;
 
@@ -577,6 +604,17 @@ const HealthCheckDetails = () => {
           const numericValue = parseFloat(memoryUsed.replace(/[^0-9.]/g, ''));
           if (!isNaN(numericValue)) {
             totalUsedMemory += numericValue;
+          }
+        }
+      }
+      
+      // Calculate total license usage
+      if (data && data.clusterInfo && data.clusterInfo.license && data.clusterInfo.license.usage) {
+        const licenseUsage = data.clusterInfo.license.usage;
+        if (licenseUsage && licenseUsage !== 'N/A') {
+          const numericValue = parseFloat(licenseUsage.replace(/[^0-9.]/g, ''));
+          if (!isNaN(numericValue)) {
+            totalLicenseUsage += numericValue;
           }
         }
       }
@@ -606,6 +644,7 @@ const HealthCheckDetails = () => {
       totalClusters: clusters.length,
       totalUsedMemory: totalUsedMemory.toFixed(1),
       totalUniqueData: totalUniqueData.toFixed(1),
+      totalLicenseUsage: totalLicenseUsage.toFixed(1),
       totalNamespaces,
       healthIssues
     };
@@ -615,6 +654,7 @@ const HealthCheckDetails = () => {
   const calculateOverallSummary = () => {
     let totalUsedMemory = 0;
     let totalUniqueData = 0;
+    let totalLicenseUsage = 0;
     let totalNamespaces = 0;
     let totalClusters = 0;
     
@@ -622,6 +662,7 @@ const HealthCheckDetails = () => {
       const regionSummary = calculateRegionSummary(region);
       totalUsedMemory += parseFloat(regionSummary.totalUsedMemory);
       totalUniqueData += parseFloat(regionSummary.totalUniqueData);
+      totalLicenseUsage += parseFloat(regionSummary.totalLicenseUsage);
       totalNamespaces += regionSummary.totalNamespaces;
       totalClusters += regionSummary.totalClusters;
     });
@@ -629,6 +670,7 @@ const HealthCheckDetails = () => {
     return {
       totalUsedMemory: totalUsedMemory.toFixed(1),
       totalUniqueData: totalUniqueData.toFixed(1),
+      totalLicenseUsage: totalLicenseUsage.toFixed(1),
       totalNamespaces,
       totalClusters
     };
@@ -741,7 +783,7 @@ const HealthCheckDetails = () => {
       {(() => {
         const overallSummary = calculateOverallSummary();
         return (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 xl:grid-cols-7 gap-4 mb-8">
             <div className="card text-center">
               <div className="text-2xl font-bold text-blue-600">{summary.total_regions}</div>
               <div className="text-sm text-gray-600">Regions</div>
@@ -761,6 +803,10 @@ const HealthCheckDetails = () => {
             <div className="card text-center">
               <div className="text-2xl font-bold text-indigo-600">{overallSummary.totalUniqueData} GB</div>
               <div className="text-sm text-gray-600">Unique Data</div>
+            </div>
+            <div className="card text-center">
+              <div className="text-2xl font-bold text-teal-600">{overallSummary.totalLicenseUsage} GB</div>
+              <div className="text-sm text-gray-600">License Usage</div>
             </div>
             <div className="card text-center">
               <div className="text-sm text-gray-600 mb-1">Created</div>
@@ -881,6 +927,7 @@ const HealthCheckDetails = () => {
                     <span>{regionSummary.totalNamespaces} namespaces</span>
                     <span>{regionSummary.totalUsedMemory} GB used memory</span>
                     <span>{regionSummary.totalUniqueData} GB unique data</span>
+                    <span>{regionSummary.totalLicenseUsage} GB license usage</span>
                     
                     {/* Status breakdown */}
                     <div className="flex gap-2">
@@ -995,12 +1042,18 @@ const HealthCheckDetails = () => {
                     const licenseUsage = clusterData?.clusterInfo?.license?.usage || 'N/A';
                     const licenseUsagePercent = clusterData?.clusterInfo?.license?.usagePercent || 'N/A';
                     
+                    // Check for invalid client writes that need manual review
+                    const needsManualReview = hasInvalidClientWrites(cluster);
+                    const invalidNamespaces = getInvalidNamespaces(cluster);
+                    
                     return (
                       <div 
                         key={clusterIndex} 
                         className={`border-2 rounded-lg p-4 transition-colors ${
                           isErrorCluster
                             ? 'border-red-300 bg-red-50 hover:bg-red-100 shadow-sm' 
+                            : needsManualReview
+                            ? 'border-orange-300 bg-orange-50 hover:bg-orange-100 shadow-sm'
                             : 'border-gray-200 bg-white hover:bg-gray-50'
                         } ${statusInfo.canView ? 'cursor-pointer' : 'cursor-default'}`}
                         onClick={() => statusInfo.canView && handleViewCluster(cluster.result_key)}
@@ -1008,7 +1061,10 @@ const HealthCheckDetails = () => {
                         <div className="flex justify-between items-start mb-3">
                           <div className="flex-1">
                             <div className="flex items-center space-x-2">
-                              <h5 className={`font-medium ${isErrorCluster ? 'text-red-700' : 'text-gray-900'}`}>
+                              <h5 className={`font-medium ${
+                                isErrorCluster ? 'text-red-700' : 
+                                needsManualReview ? 'text-orange-700' : 'text-gray-900'
+                              }`}>
                                 {realClusterName}
                               </h5>
                               {/* Status Dot */}
@@ -1036,7 +1092,10 @@ const HealthCheckDetails = () => {
                                 )}
                               </div>
                             </div>
-                            <p className={`text-xs ${isErrorCluster ? 'text-red-600' : 'text-gray-500'}`}>
+                            <p className={`text-xs ${
+                              isErrorCluster ? 'text-red-600' : 
+                              needsManualReview ? 'text-orange-600' : 'text-gray-500'
+                            }`}>
                               {cluster.filename}
                             </p>
                           </div>
@@ -1103,6 +1162,17 @@ const HealthCheckDetails = () => {
                               <span>License Usage:</span>
                               <span>{licenseUsage}</span>
                             </div>
+                            {needsManualReview && (
+                              <div className="text-orange-600 font-medium">
+                                <div className="flex justify-between">
+                                  <span>⚠️ Manual Review:</span>
+                                  <span>Required</span>
+                                </div>
+                                <div className="text-xs text-orange-500 mt-1">
+                                  {invalidNamespaces.length} namespace{invalidNamespaces.length > 1 ? 's' : ''} with invalid client writes
+                                </div>
+                              </div>
+                            )}
                                                         {isErrorCluster && (
                               <div className="mt-2 pt-2 border-t border-red-200">
                                 <div className="text-red-600 font-medium text-xs mb-2">⚠️ Parsing errors detected</div>
