@@ -217,7 +217,13 @@ const HealthCheckDetails = () => {
       // Check status filter
       let matchesStatusFilter = true;
       if (statusFilter !== 'all') {
-        matchesStatusFilter = cluster.status === statusFilter;
+        if (statusFilter === 'failed') {
+          // Include both 'failed' and 'partial' status clusters in failed filter
+          // since partial clusters are displayed as errors in the UI
+          matchesStatusFilter = cluster.status === 'failed' || cluster.status === 'partial';
+        } else {
+          matchesStatusFilter = cluster.status === statusFilter;
+        }
       }
 
       return matchesSearch && matchesUniqueDataFilter && matchesStatusFilter;
@@ -822,7 +828,6 @@ const HealthCheckDetails = () => {
                 <option value="processing">Processing</option>
                 <option value="completed">Completed</option>
                 <option value="failed">Failed</option>
-                <option value="partial">Partial</option>
               </select>
             </div>
 
@@ -880,7 +885,10 @@ const HealthCheckDetails = () => {
                     {/* Status breakdown */}
                     <div className="flex gap-2">
                       {['waiting', 'processing', 'completed', 'failed'].map(status => {
-                        const count = (region.clusters || []).filter(c => c.status === status).length;
+                        // Group 'partial' status with 'failed' since they're displayed as errors
+                        const count = status === 'failed' 
+                          ? (region.clusters || []).filter(c => c.status === 'failed' || c.status === 'partial').length
+                          : (region.clusters || []).filter(c => c.status === status).length;
                         if (count > 0) {
                           return (
                             <span key={status} className={`px-2 py-1 rounded-full text-xs font-medium ${
