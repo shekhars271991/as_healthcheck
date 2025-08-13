@@ -129,7 +129,7 @@ except Exception as e:
 
 # List of asadm commands to run - reduced to major ones to avoid large prompts
 ASADM_COMMANDS = [
-    "info",
+    # "info",
     "show stat like client_write",
     "summary"
 ]
@@ -786,6 +786,9 @@ Fields to extract:
 
 Data to parse:
 {combined_output}"""
+
+
+            logger.error(f"Input prompt {prompt})")
             
             # Call Gemini API
             model = genai.GenerativeModel('gemini-2.0-flash')
