@@ -17,6 +17,8 @@ const HealthCheckDetails = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [hideZeroUniqueData, setHideZeroUniqueData] = useState(false); // Hide clusters with 0 unique data
   const [statusFilter, setStatusFilter] = useState('all'); // Status filter: all, processing, completed, failed
+  const [manualReviewFilter, setManualReviewFilter] = useState(false); // Show only clusters needing manual review
+  const [xdrFilter, setXdrFilter] = useState(false); // Show only clusters with XDR writes
   const [clustersPerPage] = useState(50); // Pagination for large lists
   const [currentPage, setCurrentPage] = useState({});
   const [deletingCluster, setDeletingCluster] = useState(null); // Track which cluster is being deleted
@@ -272,7 +274,19 @@ const HealthCheckDetails = () => {
         }
       }
 
-      return matchesSearch && matchesUniqueDataFilter && matchesStatusFilter;
+      // Manual review filter
+      let matchesManualReview = true;
+      if (manualReviewFilter) {
+        matchesManualReview = hasInvalidClientWrites(cluster);
+      }
+
+      // XDR filter
+      let matchesXdr = true;
+      if (xdrFilter) {
+        matchesXdr = hasXdrWrites(cluster);
+      }
+
+      return matchesSearch && matchesUniqueDataFilter && matchesStatusFilter && matchesManualReview && matchesXdr;
     });
 
     // Then sort by memory used (highest to lowest)
@@ -906,6 +920,28 @@ const HealthCheckDetails = () => {
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span>Hide 0 unique data clusters</span>
+            </label>
+
+            {/* Manual Review */}
+            <label className="flex items-center space-x-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={manualReviewFilter}
+                onChange={(e) => setManualReviewFilter(e.target.checked)}
+                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+              />
+              <span>Manual Review</span>
+            </label>
+
+            {/* XDR */}
+            <label className="flex items-center space-x-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={xdrFilter}
+                onChange={(e) => setXdrFilter(e.target.checked)}
+                className="rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+              />
+              <span>XDR</span>
             </label>
             
             {/* Search Bar */}
