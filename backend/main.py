@@ -678,9 +678,12 @@ Fields to extract:
       "usedPercent": "usage percentage"
     }},
     "license": {{
-      "usage": "license usage amount",
-      "usagePercent": "license usage percentage",
-      "total": "total license capacity"
+      "usage": "license usage amount"
+    }},
+    "device": {{
+      "total": "total device memory",
+      "used": "used device memory",
+      "usedPercent": "device used percentage"
     }}
   }},
   "nodes": [
@@ -916,6 +919,15 @@ Data to parse:
                 if 'total' in license_info:
                     license_info['total'] = self.normalize_to_gb(license_info['total'])
             
+            # Normalize cluster-level device data
+            if 'clusterInfo' in parsed_data and 'device' in parsed_data['clusterInfo']:
+                device = parsed_data['clusterInfo']['device']
+                if isinstance(device, dict):
+                    if 'total' in device:
+                        device['total'] = self.normalize_to_gb(device['total'])
+                    if 'used' in device:
+                        device['used'] = self.normalize_to_gb(device['used'])
+            
             # Normalize namespace-level data
             if 'namespaces' in parsed_data:
                 for namespace in parsed_data['namespaces']:
@@ -1045,6 +1057,11 @@ Data to parse:
                         'usage': 'Unknown',
                         'usagePercent': 'Unknown',
                         'total': 'Unknown'
+                    },
+                    'device': {
+                        'total': 'Unknown',
+                        'used': 'Unknown',
+                        'usedPercent': 'Unknown'
                     }
                 },
                 'nodes': [],
@@ -1081,6 +1098,25 @@ Data to parse:
                         fallback_data['clusterInfo']['namespaces'] = int(line.split('|')[-1].strip())
                     except:
                         pass
+                # Memory summary (Data + Indexes)
+                elif 'Memory (Data + Indexes) Total' in line:
+                    fallback_data['clusterInfo']['memory']['total'] = line.split('|')[-1].strip()
+                elif 'Memory (Data + Indexes) Used ' in line and 'Used%' not in line:
+                    # The line typically is "Memory (Data + Indexes) Used  |1.442 TB"
+                    fallback_data['clusterInfo']['memory']['used'] = line.split('|')[-1].strip()
+                elif 'Memory (Data + Indexes) Used%' in line:
+                    fallback_data['clusterInfo']['memory']['usedPercent'] = line.split('|')[-1].strip()
+                # License
+                elif 'License Usage Latest' in line:
+                    fallback_data['clusterInfo']['license']['usage'] = line.split('|')[-1].strip()
+                # Device summary
+                elif 'Device Total' in line and 'Devices Total' not in line:
+                    # Avoid the "Devices Total" (count) line; we need storage device total
+                    fallback_data['clusterInfo']['device']['total'] = line.split('|')[-1].strip()
+                elif 'Device Used ' in line and 'Device Used%' not in line:
+                    fallback_data['clusterInfo']['device']['used'] = line.split('|')[-1].strip()
+                elif 'Device Used%' in line:
+                    fallback_data['clusterInfo']['device']['usedPercent'] = line.split('|')[-1].strip()
                 elif 'Total:' in line and 'Passed:' in line and 'Failed:' in line:
                     parts = line.split()
                     try:
@@ -1088,6 +1124,12 @@ Data to parse:
                         fallback_data['health']['failed'] = int(parts[parts.index('Failed:') + 1])
                     except:
                         pass
+            
+            # Normalize sizes to GB for any extracted values
+            try:
+                self.normalize_data_sizes(fallback_data)
+            except Exception:
+                pass
             
             logger.info("Created fallback structure due to Gemini failure")
             return fallback_data

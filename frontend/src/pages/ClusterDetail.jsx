@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Server, Database, ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -9,10 +9,33 @@ const ClusterDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedNamespaces, setExpandedNamespaces] = useState(new Set());
+  const [nodesCollapsed, setNodesCollapsed] = useState(false);
 
   useEffect(() => {
     fetchClusterDetails();
   }, [healthCheckId, resultKey]);
+
+  // Sum of unique data across namespaces (expects values like "12.34 GB")
+  const totalUniqueData = useMemo(() => {
+    try {
+      const namespaces = clusterData?.data?.namespaces || [];
+      let sum = 0;
+      namespaces.forEach((ns) => {
+        const val = ns?.clientWrites?.uniqueData;
+        if (val !== undefined && val !== null) {
+          if (typeof val === 'number') {
+            sum += val; // assume GB
+          } else if (typeof val === 'string') {
+            const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
+            if (!isNaN(num)) sum += num;
+          }
+        }
+      });
+      return sum > 0 ? `${sum.toFixed(2)} GB` : 'N/A';
+    } catch {
+      return 'N/A';
+    }
+  }, [clusterData?.data?.namespaces]);
 
   const fetchClusterDetails = async () => {
     try {
@@ -154,6 +177,21 @@ const ClusterDetail = () => {
               <div className="text-sm font-medium text-gray-500">Memory Used</div>
               <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.memory?.used || 'N/A'} ({healthData.clusterInfo?.memory?.usedPercent || 'N/A'})</div>
             </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-gray-500">Device Total</div>
+              <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.device?.total || 'N/A'}</div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-gray-500">Device Used</div>
+              <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.device?.used || 'N/A'} ({healthData.clusterInfo?.device?.usedPercent || 'N/A'})</div>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-gray-500">Unique Data</div>
+              <div className="text-sm text-gray-900 font-mono">{totalUniqueData}</div>
+            </div>
             
             <div className="space-y-2">
               <div className="text-sm font-medium text-gray-500">License Usage</div>
@@ -172,39 +210,51 @@ const ClusterDetail = () => {
         {/* Nodes Section */}
         {healthData.nodes?.length > 0 && (
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <Server className="h-5 w-5 mr-2 text-green-600" />
-              Nodes ({healthData.nodes.length})
-            </h3>
+            <button
+              onClick={() => setNodesCollapsed(!nodesCollapsed)}
+              className="w-full flex items-center justify-between mb-4 text-left"
+            >
+              <span className="flex items-center text-lg font-semibold text-gray-900">
+                <Server className="h-5 w-5 mr-2 text-green-600" />
+                Nodes ({healthData.nodes.length})
+              </span>
+              {nodesCollapsed ? (
+                <ChevronRight className="h-4 w-4 text-gray-500" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-gray-500" />
+              )}
+            </button>
             
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Node</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Uptime</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Connections</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {healthData.nodes.map((node, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{node.node}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          node.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {node.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{node.uptime}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{node.connections}</td>
+            {!nodesCollapsed && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Node</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Uptime</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Connections</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {healthData.nodes.map((node, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{node.node}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            node.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {node.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{node.uptime}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{node.connections}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

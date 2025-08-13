@@ -226,7 +226,7 @@ const HealthCheckDetails = () => {
   const handleDeleteCluster = async (resultKey, clusterName) => {
     setDeletingCluster(resultKey);
     try {
-      const response = await fetch(`/api/health-checks/clusters/${resultKey}`, {
+      const response = await fetch(`http://localhost:8000/health-checks/clusters/${resultKey}`, {
         method: 'DELETE',
       });
 
@@ -235,8 +235,8 @@ const HealthCheckDetails = () => {
         await fetchHealthCheckDetails(false);
         alert(`Cluster "${clusterName}" deleted successfully`);
       } else {
-        const errorData = await response.json();
-        alert(`Failed to delete cluster: ${errorData.error || 'Unknown error'}`);
+        const errorData = await response.json().catch(() => ({}));
+        alert(`Failed to delete cluster: ${errorData.message || errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error deleting cluster:', error);
@@ -840,7 +840,7 @@ const HealthCheckDetails = () => {
                     ) : (
                       <>
                         <Plus className="h-4 w-4 mr-2" />
-                        Add Files
+                        Add Clusters
                       </>
                     )}
                   </button>

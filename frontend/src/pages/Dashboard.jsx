@@ -20,6 +20,7 @@ const Dashboard = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [healthData, setHealthData] = useState(null);
   const [error, setError] = useState(null);
+  const [nodesCollapsed, setNodesCollapsed] = useState(false);
 
   // Load data from localStorage on component mount
   useEffect(() => {
@@ -433,7 +434,7 @@ const Dashboard = () => {
             
             <div className="space-y-2">
               <div className="text-sm font-medium text-gray-500">License Usage</div>
-              <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.license?.usage || 'N/A'} ({healthData.clusterInfo?.license?.usagePercent || 'N/A'})</div>
+              <div className="text-sm text-gray-900 font-mono">{healthData.clusterInfo?.license?.usage || 'N/A'}</div>
             </div>
           </div>
           
@@ -468,39 +469,51 @@ const Dashboard = () => {
         {/* Nodes Section */}
         {healthData.nodes?.length > 0 && (
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <Server className="h-5 w-5 mr-2 text-green-600" />
-              Nodes ({healthData.nodes.length})
-            </h3>
+            <button
+              onClick={() => setNodesCollapsed(!nodesCollapsed)}
+              className="w-full flex items-center justify-between mb-4 text-left"
+            >
+              <span className="flex items-center text-lg font-semibold text-gray-900">
+                <Server className="h-5 w-5 mr-2 text-green-600" />
+                Nodes ({healthData.nodes.length})
+              </span>
+              {nodesCollapsed ? (
+                <ChevronRight className="h-4 w-4 text-gray-500" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-gray-500" />
+              )}
+            </button>
             
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Node</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Uptime</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Connections</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {healthData.nodes.map((node, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{node.node}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          node.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {node.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{node.uptime}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{node.connections}</td>
+            {!nodesCollapsed && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Node</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Uptime</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Connections</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {healthData.nodes.map((node, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">{node.node}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            node.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {node.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{node.uptime}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{node.connections}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
         
@@ -570,9 +583,9 @@ const Dashboard = () => {
                         
                         <div className="space-y-1">
                           <div className="text-xs font-medium text-gray-500">License Usage</div>
-                          <div className="text-sm text-gray-900 font-mono">
+                          {/* <div className="text-sm text-gray-900 font-mono">
                             {ns?.license?.usage || 'N/A'} ({ns?.license?.usagePercent || 'N/A'})
-                          </div>
+                          </div> */}
                         </div>
                         
                         <div className="space-y-1">
@@ -582,175 +595,6 @@ const Dashboard = () => {
                           </div>
                         </div>
                       </div>
-                      
-                      {/* Usage Information */}
-                      {ns?.usageInfo && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          <h5 className="text-sm font-medium text-gray-700 mb-3">Usage Information</h5>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">Evictions</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.usageInfo.evictions || 'N/A'}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">Stop Writes</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.usageInfo.stopWrites || 'N/A'}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">System Memory</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.usageInfo.systemMemory || 'N/A'}
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* Primary Index */}
-                          {ns.usageInfo.primaryIndex && (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <h6 className="text-xs font-medium text-gray-600 mb-2">Primary Index</h6>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500">Type</div>
-                                  <div className="text-sm text-gray-900 font-mono">
-                                    {ns.usageInfo.primaryIndex.type || 'N/A'}
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500">Used</div>
-                                  <div className="text-sm text-gray-900 font-mono">
-                                    {ns.usageInfo.primaryIndex.used || 'N/A'}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Storage Engine */}
-                          {ns.usageInfo.storageEngine && (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <h6 className="text-xs font-medium text-gray-600 mb-2">Storage Engine</h6>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500">Used</div>
-                                  <div className="text-sm text-gray-900 font-mono">
-                                    {ns.usageInfo.storageEngine.used || 'N/A'}
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500">Available %</div>
-                                  <div className="text-sm text-gray-900 font-mono">
-                                    {ns.usageInfo.storageEngine.availablePercent || 'N/A'}
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500">Evict %</div>
-                                  <div className="text-sm text-gray-900 font-mono">
-                                    {ns.usageInfo.storageEngine.evictPercent || 'N/A'}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      
-                      {/* Object Information */}
-                      {ns?.objectInfo && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          <h5 className="text-sm font-medium text-gray-700 mb-3">Object Information</h5>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">Total Records</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.objectInfo.totalRecords || 'N/A'}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">Master Objects</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.objectInfo.masterObjects || 'N/A'}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">Expirations</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.objectInfo.expirations || 'N/A'}
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* Tombstones */}
-                          {ns.objectInfo.tombstones && (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <h6 className="text-xs font-medium text-gray-600 mb-2">Tombstones</h6>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500">Master</div>
-                                  <div className="text-sm text-gray-900 font-mono">
-                                    {ns.objectInfo.tombstones.master || 'N/A'}
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500">Prole</div>
-                                  <div className="text-sm text-gray-900 font-mono">
-                                    {ns.objectInfo.tombstones.prole || 'N/A'}
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500">Non-Replica</div>
-                                  <div className="text-sm text-gray-900 font-mono">
-                                    {ns.objectInfo.tombstones.nonReplica || 'N/A'}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      
-                      {/* Client Writes */}
-                      {ns?.clientWrites && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          <h5 className="text-sm font-medium text-gray-700 mb-3">Client Write Success</h5>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">Client Write Success</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.clientWrites.clientWriteSuccess || 'N/A'}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">XDR Client Write Success</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.clientWrites.xdrClientWriteSuccess || 'N/A'}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">Unique Writes %</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.clientWrites.uniqueWritesPercent || 'N/A'}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium text-gray-500">Unique Data</div>
-                              <div className="text-sm text-gray-900 font-mono">
-                                {ns.clientWrites.uniqueData || 'N/A'}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -758,7 +602,7 @@ const Dashboard = () => {
             </div>
           </div>
         )}
-        
+
 
       </div>
     );
