@@ -28,6 +28,8 @@ const XDRView = () => {
   const [error, setError] = useState(null);
   const [replicationFilter, setReplicationFilter] = useState('all'); // all | AP | AA
   const [activeTab, setActiveTab] = useState('xdr'); // 'xdr' | 'standalone'
+  const [sortKey, setSortKey] = useState('name'); // 'name' | 'cluster' | 'overall' | `region:${name}`
+  const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -82,13 +84,16 @@ const XDRView = () => {
 
     const rows = Array.from(map.values()).map((e) => {
       const regionCells = {};
+      const regionNums = {};
       topRegions.forEach((r) => {
         const b = e.perRegion[r];
         if (b) {
           const licenseStr = b.license > 0 ? `${b.license.toFixed(2)} GB` : 'N/A';
           regionCells[r] = licenseStr;
+          regionNums[r] = b.license || 0;
         } else {
           regionCells[r] = '—';
+          regionNums[r] = 0;
         }
       });
       // choose the first cluster name
@@ -116,9 +121,11 @@ const XDRView = () => {
         name: e.name,
         clusterName,
         regionCells,
+        regionNums,
         hasXdr: e.hasXdr,
         replication,
         overallLicense: overallLic > 0 ? `${overallLic.toFixed(2)} GB` : 'N/A',
+        overallLicenseNum: overallLic || 0,
         sumLicense: Object.values(e.perRegion)
           .map((b) => (b && typeof b.license === 'number' ? b.license : 0))
           .reduce((a, b) => a + b, 0),
@@ -205,19 +212,30 @@ const XDRView = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Namespace</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cluster</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={()=>{setSortKey('name'); setSortDir(sortDir==='asc'?'desc':'asc')}}>Namespace</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={()=>{setSortKey('cluster'); setSortDir(sortDir==='asc'?'desc':'asc')}}>Cluster</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Replication</th>
               {topRegions.map((r) => (
-                <th key={r} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">License Usage in {r}</th>
+                <th key={r} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={()=>{setSortKey(`region:${r}`); setSortDir(sortDir==='asc'?'desc':'asc')}}>License Usage in {r}</th>
               ))}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Overall License Usage</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={()=>{setSortKey('overall'); setSortDir(sortDir==='asc'?'desc':'asc')}}>Overall License Usage</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {rows
               .filter(r=>r.hasXdr)
               .filter(r=> replicationFilter==='all' ? true : r.replication === replicationFilter)
+              .sort((a,b)=>{
+                let cmp = 0;
+                if (sortKey==='name') cmp = a.name.localeCompare(b.name);
+                else if (sortKey==='cluster') cmp = a.clusterName.localeCompare(b.clusterName);
+                else if (sortKey==='overall') cmp = (a.overallLicenseNum||0) - (b.overallLicenseNum||0);
+                else if (sortKey.startsWith('region:')){
+                  const r = sortKey.split(':')[1];
+                  cmp = (a.regionNums[r]||0) - (b.regionNums[r]||0);
+                }
+                return sortDir==='asc'? cmp : -cmp;
+              })
               .map((row)=> (
               <tr key={row.name} className="hover:bg-gray-50">
                 <td className="px-6 py-3 text-sm font-mono text-gray-900">{row.name}</td>
@@ -242,16 +260,29 @@ const XDRView = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Namespace</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cluster</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={()=>{setSortKey('name'); setSortDir(sortDir==='asc'?'desc':'asc')}}>Namespace</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={()=>{setSortKey('cluster'); setSortDir(sortDir==='asc'?'desc':'asc')}}>Cluster</th>
               {topRegions.map((r) => (
-                <th key={r} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">License Usage in {r}</th>
+                <th key={r} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={()=>{setSortKey(`region:${r}`); setSortDir(sortDir==='asc'?'desc':'asc')}}>License Usage in {r}</th>
               ))}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Overall License Usage</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={()=>{setSortKey('overall'); setSortDir(sortDir==='asc'?'desc':'asc')}}>Overall License Usage</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {rows.filter(r=>!r.hasXdr).map((row)=> (
+            {rows
+              .filter(r=>!r.hasXdr)
+              .sort((a,b)=>{
+                let cmp = 0;
+                if (sortKey==='name') cmp = a.name.localeCompare(b.name);
+                else if (sortKey==='cluster') cmp = a.clusterName.localeCompare(b.clusterName);
+                else if (sortKey==='overall') cmp = (a.sumLicense||0) - (b.sumLicense||0);
+                else if (sortKey.startsWith('region:')){
+                  const r = sortKey.split(':')[1];
+                  cmp = (a.regionNums[r]||0) - (b.regionNums[r]||0);
+                }
+                return sortDir==='asc'? cmp : -cmp;
+              })
+              .map((row)=> (
               <tr key={row.name} className="hover:bg-gray-50">
                 <td className="px-6 py-3 text-sm font-mono text-gray-900">{row.name}</td>
                 <td className="px-6 py-3 text-sm text-gray-900 font-mono">{row.clusterName}</td>
