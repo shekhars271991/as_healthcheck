@@ -404,26 +404,16 @@ const HealthCheckDetails = () => {
       region.clusters?.forEach(cluster => {
         const clusterData = cluster.data;
         const realClusterName = clusterData?.clusterInfo?.name || cluster.cluster_name;
-        const namespaceCount = clusterData?.namespaces?.length || 0;
         
-        // Calculate total used memory
-        const totalUsedMemory = clusterData?.clusterInfo?.memory?.used || '0 GB';
-        const usedMemoryValue = parseFloat(totalUsedMemory.replace(/[^0-9.]/g, '')) || 0;
-        
-        // Calculate unique data (sum from all namespaces)
-        const uniqueData = clusterData?.namespaces?.reduce((total, ns) => {
-          const uniqueValue = parseFloat(ns.clientWrites?.uniqueData?.replace(/[^0-9.]/g, '') || 0);
-          return total + uniqueValue;
-        }, 0) || 0;
+        // Extract license usage information
+        const licenseUsage = clusterData?.clusterInfo?.license?.usage || 'N/A';
+        const licenseUsageValue = parseFloat(licenseUsage.replace(/[^0-9.]/g, '')) || 0;
 
         exportData.push({
           'S.No': sno++,
-          'Region': region.region_name || '',
-          'Collectinfo Filename': cluster.filename || '',
+          'Filename': cluster.filename || '',
           'Cluster Name': realClusterName,
-          'Namespace Count': namespaceCount, // Keep as number
-          'Total Used Memory (GB)': usedMemoryValue, // Keep as number
-          'Unique Data (GB)': uniqueData // Keep as number
+          'License Usage (GB)': licenseUsageValue // Keep as number
         });
       });
     });
@@ -442,11 +432,9 @@ const HealthCheckDetails = () => {
     // Add summary header
     XLSX.utils.sheet_add_aoa(ws, [['TOTALS:']], { origin: `A${summaryStartRow + 1}` });
     
-    // Add formula rows
+    // Add formula row
     const formulas = [
-      ['', '', '', 'Total Namespace Count:', { f: `SUM(E2:E${dataRowCount + 1})` }, '', ''],
-      ['', '', '', 'Total Used Memory (GB):', '', { f: `SUM(F2:F${dataRowCount + 1})` }, ''],
-      ['', '', '', 'Total Unique Data (GB):', '', '', { f: `SUM(G2:G${dataRowCount + 1})` }]
+      ['', '', 'Total License Usage (GB):', { f: `SUM(D2:D${dataRowCount + 1})` }]
     ];
     
     XLSX.utils.sheet_add_aoa(ws, formulas, { origin: `A${summaryStartRow + 2}` });
@@ -454,19 +442,16 @@ const HealthCheckDetails = () => {
     // Set column widths for better readability
     const colWidths = [
       { wch: 8 },   // S.No
-      { wch: 15 },  // Region
-      { wch: 30 },  // Collectinfo Filename
+      { wch: 30 },  // Filename
       { wch: 25 },  // Cluster Name
-      { wch: 18 },  // Namespace Count
-      { wch: 22 },  // Total Used Memory
-      { wch: 18 }   // Unique Data
+      { wch: 20 }   // License Usage
     ];
     ws['!cols'] = colWidths;
 
     // Style the summary section (make it bold)
     const range = XLSX.utils.decode_range(ws['!ref']);
-    for (let row = summaryStartRow; row <= summaryStartRow + 4; row++) {
-      for (let col = 0; col <= 6; col++) {
+    for (let row = summaryStartRow; row <= summaryStartRow + 2; row++) {
+      for (let col = 0; col <= 3; col++) {
         const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
         if (!ws[cellAddress]) continue;
         
